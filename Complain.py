@@ -12,7 +12,7 @@ st.set_page_config(page_title="District Grievance & IT Monitoring Portal", layou
 # Paste your public Google Sheet URL here:
 GSHEET_URL = "https://docs.google.com/spreadsheets/d/1kQx4dwtKNAQ2mKAvpohbAYLdKCh-nqNqQs8AV6VsGSQ/edit?usp=sharing"
 
-def load_data_from_gsheet():
+def load_data():
     try:
         # Streamlit's built-in cloud connector for public/link-shared sheets
         csv_url = GSHEET_URL.replace("/edit?usp=sharing", "/gviz/tq?tqx=out:csv")
