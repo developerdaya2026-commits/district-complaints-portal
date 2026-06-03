@@ -84,7 +84,7 @@ if role == "Block IT Assistant Portal":
             st.text_input("System Generated ID", value=comp_id, disabled=True)
             
         description = st.text_area("Detailed Issue Description & Error Flash Messages")
-        submit_btn = st.form_submit_with_button_kwargs(label="Submit Grievance to District Level")
+        submit_btn = st.form_submit_button(label="Submit Grievance to District Level")
         
         if submit_btn:
             if not description.strip():
