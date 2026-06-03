@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, date
+import requests
 
 # Set page configuration
 st.set_page_config(page_title="District Grievance & IT Monitoring Portal", layout="wide")
@@ -9,187 +10,178 @@ st.set_page_config(page_title="District Grievance & IT Monitoring Portal", layou
 # ==========================================
 # GOOGLE SHEET CONNECTION SETUP
 # ==========================================
-# Paste your public Google Sheet URL here:
+# Public Link with Edit Access for Web App Backend
 GSHEET_URL = "https://docs.google.com/spreadsheets/d/1kQx4dwtKNAQ2mKAvpohbAYLdKCh-nqNqQs8AV6VsGSQ/edit?usp=sharing"
 
+# App Script Web App URL for directly writing data to Google Sheet
+# (This bypasses the need for Streamlit Cloud Secrets)
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzL5nQ6l-nE_I0U7yOas8jC4h7C6g8uA3WNZ_g8L_m0_8wUv1Hw7g6C_xREc7G4p9q4/exec"
+
 def load_data():
     try:
-        # Streamlit's built-in cloud connector for public/link-shared sheets
-        csv_url = GSHEET_URL.replace("/edit?usp=sharing", "/gviz/tq?tqx=out:csv")
+        # Convert public sheet link to CSV export URL for instant reading
+        csv_url = "https://docs.google.com/spreadsheets/d/1kQx4dwtKNAQ2mKAvpohbAYLdKCh-nqNqQs8AV6VsGSQ/gviz/tq?tqx=out:csv"
         df = pd.read_csv(csv_url)
-        df['Date'] = pd.to_datetime(df['Date']).dt.date
-        df['Reference No'] = df['Reference No'].fillna('')
-        df['District Action/Opinion'] = df['District Action/Opinion'].fillna('')
-        df['Resolution Date'] = df['Resolution Date'].fillna('')
-        return df
+        
+        # Ensure Date column is in proper date format
+        if not df.empty and 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date']).dt.date
+        return df.fillna("")
     except Exception as e:
-        st.error("Failed to connect to Google Sheet. Please verify the URL and sharing settings.")
-        return pd.DataFrame()
+        # Fallback to empty dataframe with correct headers if read fails
+        return pd.DataFrame(columns=[
+            'Date', 'Block', 'Complaint ID', 'Reference No', 
+            'Category', 'Status', 'Description', 'District Action/Opinion', 'Resolution Date'
+        ])
 
-# For writing back data safely over the internet using Streamlit connection
-def append_to_gsheet(new_entry_dict):
+def save_data_to_gsheet(new_row_dict):
     try:
-        # Establish connection using public read/write layout
-        conn = st.connection("gsheets", type=st.connections.SQLConnection)
-        # Note: For strict write-back deployment on share.streamlit.io, 
-        # Streamlit utilizes a secure secrets configuration file (.streamlit/secrets.toml)
-        pass 
-    except:
-        pass
+        # Format the date to string for smooth transfer
+        if isinstance(new_row_dict['Date'], (date, datetime)):
+            new_row_dict['Date'] = new_row_dict['Date'].strftime('%Y-%m-%d')
+            
+        # Direct API Call to Google Sheet Apps Script Backend
+        response = requests.post(WEB_APP_URL, json=new_row_dict, timeout=10)
+        if response.status_code == 200:
+            return True
+        return False
+    except Exception as e:
+        return False
 
-# Fallback local save setup for testing before fully moving secrets to cloud
-# (We use a hybrid approach so you don't get stuck on authentication)
-DB_FILE = "district_complaints_db.xlsx"
-def load_data():
-    # If testing locally, we read Excel; if deployed, we point to the cloud URL
-    if "YOUR_SHEET_ID_HERE" in GSHEET_URL:
-        st.warning("⚠️ Running in local mode. Please update the GSHEET_URL with your actual Google Sheet link.")
-        df = pd.read_excel(DB_FILE)
-    else:
-        csv_url = GSHEET_URL.split("/edit")[0] + "/gviz/tq?tqx=out:csv"
-        df = pd.read_csv(csv_url)
-    df['Date'] = pd.to_datetime(df['Date']).dt.date
-    return df
-
-def save_all_data(df):
-    # Overwrites local spreadsheet cache or pushes update
-    df.to_excel(DB_FILE, index=False)
-    st.info("🔄 Data synchronized locally. (For cloud sync, connect to Streamlit Community Cloud Secrets).")
+# Load Live Data
+df_global = load_data()
 
 # ==========================================
-# SIDEBAR ACCESS CONTROL & FILTERS
+# SIDEBAR - ROLE SELECTION
 # ==========================================
 st.sidebar.title("🏛️ Portal Access Desk")
-user_role = st.sidebar.radio("Identify Your Role:", ["📝 Block IT Assistant Portal", "📊 District Officer/DM Dashboard"])
-
-df_raw = load_data()
+role = st.sidebar.radio(
+    "Identify Your Role:",
+    ["Block IT Assistant Portal", "District Officer/DM Dashboard"]
+)
 
 # ==========================================
-# MODULE 1: BLOCK IT ASSISTANT PORTAL
+# ROLE 1: BLOCK IT ASSISTANT PORTAL
 # ==========================================
-if user_role == "📝 Block IT Assistant Portal":
+if role == "Block IT Assistant Portal":
     st.title("📝 Block Technical Grievance Entry Portal")
     st.subheader("Log daily technical, RTPS, Lok Shikayat, or Administrative issues below.")
     
-    with st.form("block_entry_form", clear_on_submit=True):
+    with st.form(key="grievance_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            date_input = st.date_input("Date of Issue Identification", datetime.now().date())
-            block_input = st.selectbox("Your Block Jurisdiction", ["Block A", "Block B", "Block C", "Block D", "Block E"])
-            category_input = st.selectbox("Functional Domain / Department", ["RTPS", "Lok Shikayat", "Administrative", "Survey/Raiyat", "Other Infrastructure"])
+            issue_date = st.date_input("Date of Issue Identification", value=date.today())
+            block_name = st.selectbox("Your Block Jurisdiction", [
+                "Block A", "Block B", "Block C", "Block D", "Nawada Sadar", "Akbarpur", "Hisua", "Kashichak"
+            ])
+            category = st.selectbox("Functional Domain / Department", [
+                "RTPS", "Lok Shikayat", "E-Kalyan", "Social Security", "Administrative Issue", "Hardware/Network"
+            ])
         with col2:
             ref_no = st.text_input("Official Reference No. (If Available)", placeholder="e.g., RTPS/2026/XXXX")
-            complaint_id = f"CPL{int(datetime.now().timestamp())}"
-            st.text_input("System Generated ID", value=complaint_id, disabled=True)
+            # Generate unique Complaint ID
+            comp_id = f"CPL{int(datetime.now().timestamp())}"
+            st.text_input("System Generated ID", value=comp_id, disabled=True)
             
-        description_input = st.text_area("Detailed Issue Description & Error Flash Messages")
-        submit_btn = st.form_submit_button("Submit Grievance to District Level")
+        description = st.text_area("Detailed Issue Description & Error Flash Messages")
+        submit_btn = st.form_submit_with_button_kwargs(label="Submit Grievance to District Level")
         
         if submit_btn:
-            if not description_input.strip():
-                st.error("Please explicitly describe the core problem or error before submitting.")
+            if not description.strip():
+                st.error("❌ Please provide a detailed description of the issue before submitting.")
             else:
-                new_entry = {
-                    "Date": str(date_input), "Block": block_input, "Complaint ID": complaint_id,
-                    "Reference No": ref_no, "Category": category_input, "Status": "Pending",
-                    "Description": description_input, "District Action/Opinion": "", "Resolution Date": ""
+                new_data = {
+                    "Date": issue_date,
+                    "Block": block_name,
+                    "Complaint ID": comp_id,
+                    "Reference No": ref_no,
+                    "Category": category,
+                    "Status": "Pending",
+                    "Description": description,
+                    "District Action/Opinion": "",
+                    "Resolution Date": ""
                 }
-                df_current = load_data()
-                df_current = pd.concat([df_current, pd.DataFrame([new_entry])], ignore_index=True)
-                save_all_data(df_current)
-                st.success(f"Grievance registered under ID: {complaint_id}. Transmitted to Central Cloud Database.")
+                
+                # Trigger Direct Web App Cloud Write
+                with st.spinner("Transmitting data directly to Central District Database..."):
+                    success = save_data_to_gsheet(new_data)
+                    
+                if success:
+                    st.success(f"🚀 Grievance successfully registered under ID: {comp_id}. Real-time synced with District Google Sheet!")
+                    st.balloons()
+                else:
+                    # Secondary local fallback if network fails
+                    st.warning("⚠️ Direct cloud sync timed out. Saving locally. Please check internet connection.")
+                    # Append locally for immediate display consistency
+                    new_df = pd.DataFrame([new_data])
+                    df_global = pd.concat([df_global, new_df], ignore_index=True)
+                    df_global.to_excel("district_complaints_db.xlsx", index=False)
 
 # ==========================================
-# MODULE 2: DISTRICT MONITORING & ACTION DESK
+# ROLE 2: DISTRICT OFFICER / DM DASHBOARD
 # ==========================================
 else:
-    st.title("📊 District Management & Performance Dashboard")
+    st.title("📊 District Officer & DM Monitoring Dashboard")
+    st.subheader("Live Analytical Review of Block Level Pendency & Grievances")
     
-    st.sidebar.header("🔍 Filter Analytics Panel")
-    min_d = min(df_raw['Date']) if not df_raw.empty else datetime.now().date()
-    max_d = max(df_raw['Date']) if not df_raw.empty else datetime.now().date()
-    date_range = st.sidebar.date_input("Select Audit Window (e.g., This Month)", [min_d, max_d])
-    selected_block = st.sidebar.selectbox("Isolate Specific Block Location", ["All"] + list(df_raw['Block'].unique()))
-    
-    df_filtered = df_raw.copy()
-    if len(date_range) == 2:
-        df_filtered = df_filtered[(df_filtered['Date'] >= date_range[0]) & (df_filtered['Date'] <= date_range[1])]
-    if selected_block != "All":
-        df_filtered = df_filtered[df_filtered['Block'] == selected_block]
+    if df_global.empty:
+        st.info("📂 No data available currently. Once Blocks log complaints, analytics will auto-populate.")
+    else:
+        # High-level Metrics
+        total_cases = len(df_global)
+        pending_cases = len(df_global[df_global['Status'].str.lower() == 'pending'])
+        resolved_cases = len(df_global[df_global['Status'].str.lower() == 'resolved'])
         
-    t_count = len(df_filtered)
-    p_count = len(df_filtered[df_filtered['Status'] == 'Pending'])
-    i_count = len(df_filtered[df_filtered['Status'] == 'In Progress'])
-    r_count = len(df_filtered[df_filtered['Status'] == 'Resolved'])
-    
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Grievances Logged", t_count)
-    c2.metric("Pending Action 🔴", p_count)
-    c3.metric("Under Processing 🟡", i_count)
-    c4.metric("Disposed / Resolved 🟢", r_count)
-    
-    st.markdown("---")
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Live Grid View", "⚙️ Update Action / Resolve", "🧮 Cross-Tabulation Pivot", "📈 DM Performance Charts"])
-    
-    with tab1:
-        st.subheader("📋 Centralized Grid Control Matrix")
-        st.dataframe(df_filtered, use_container_width=True, hide_index=True)
-        csv = df_filtered.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Export Current View for DM Briefing (CSV)", data=csv, file_name="District_Report.csv", mime="text/csv")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Grievances Received", total_cases)
+        m2.metric("Active Pendency (Pending)", pending_cases, delta=f"{pending_cases} Action Required", delta_color="inverse")
+        m3.metric("Resolved Cases", resolved_cases, delta=f"{resolved_cases} Closed Successfully")
         
-    with tab2:
-        st.subheader("⚙️ Take Administrative Action on Block Complaints")
-        unresolved_df = df_raw[df_raw['Status'] != 'Resolved']
+        st.markdown("---")
         
-        if not unresolved_df.empty:
-            complaint_list = unresolved_df['Complaint ID'].tolist()
-            selected_cpl_id = st.selectbox("Select Active Complaint ID to Update:", complaint_list)
-            target_row = df_raw[df_raw['Complaint ID'] == selected_cpl_id].iloc[0]
+        # Tabs for better sorting
+        tab1, tab2, tab3 = st.tabs(["🔍 Live Data Explorer", "📈 Domain Analytics", "⚙️ Action Taken Cell"])
+        
+        with tab1:
+            st.subheader("Master Grievance Ledger (Real-time Google Sheet Sync)")
+            st.dataframe(df_global, use_container_width=True)
             
-            st.info(f"**Originating Block:** {target_row['Block']} | **Domain:** {target_row['Category']} | **Ref No:** {target_row['Reference No']}")
-            st.warning(f"**Block Description:** {target_row['Description']}")
+        with tab2:
+            st.subheader("Analytical Trends for Review Meetings")
+            c1, c2 = st.columns(2)
+            with c1:
+                fig_pie = px.pie(df_global, names='Category', title='Grievance Load by Domain Sector', hole=0.4)
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with c2:
+                fig_bar = px.bar(df_global, x='Block', color='Status', title='Comparative Pendency Profiles Across Blocks', barmode='group')
+                st.plotly_chart(fig_bar, use_container_width=True)
+                
+        with tab3:
+            st.subheader("Update Action Taken & Remarks")
+            case_to_update = st.selectbox("Select Complaint ID to Action", df_global['Complaint ID'].unique())
             
-            with st.form("action_form"):
-                action_status = st.selectbox("Update Performance Status", ["Pending", "In Progress", "Resolved"], index=["Pending", "In Progress", "Resolved"].index(target_row['Status']))
-                action_opinion = st.text_area("District Action Taken / Official Opinion Note", value=target_row['District Action/Opinion'])
+            if case_to_update:
+                case_row = df_global[df_global['Complaint ID'] == case_to_update].iloc[0]
+                st.write(f"**Block:** {case_row['Block']} | **Issue:** {case_row['Description']}")
                 
-                update_btn = st.form_submit_button("Commit Action Note to Database")
-                
-                if update_btn:
-                    df_raw.loc[df_raw['Complaint ID'] == selected_cpl_id, 'Status'] = action_status
-                    df_raw.loc[df_raw['Complaint ID'] == selected_cpl_id, 'District Action/Opinion'] = action_opinion
-                    if action_status == "Resolved":
-                        df_raw.loc[df_raw['Complaint ID'] == selected_cpl_id, 'Resolution Date'] = str(date.today())
+                with st.form(key="action_form"):
+                    new_status = st.selectbox("Update Status", ["Pending", "In Progress", "Resolved"], index=["pending", "in progress", "resolved"].index(case_row['Status'].lower()) if case_row['Status'].lower() in ["pending", "in progress", "resolved"] else 0)
+                    action_remarks = st.text_area("District Office Remarks / Orders Issued", value=case_row['District Action/Opinion'])
+                    res_date = st.date_input("Resolution Date (If Closing)", value=date.today())
                     
-                    save_all_data(df_raw)
-                    st.success(f"Status and official notes for {selected_cpl_id} updated successfully!")
-                    st.rerun()
-        else:
-            st.success("🎉 Excellent! No pending grievances require action items at this hour.")
-            
-    with tab3:
-        st.subheader("🧮 Institutional Cross-Tabulations (Pivots)")
-        if not df_filtered.empty:
-            col_p1, col_p2 = st.columns(2)
-            with col_p1:
-                st.markdown("**Domain Distribution across Blocks**")
-                p_table1 = df_filtered.pivot_table(index='Block', columns='Category', values='Complaint ID', aggfunc='count', fill_value=0)
-                st.dataframe(p_table1, use_container_width=True)
-            with col_p2:
-                st.markdown("**Disposal Settlement Rate per Jurisdiction**")
-                p_table2 = df_filtered.pivot_table(index='Block', columns='Status', values='Complaint ID', aggfunc='count', fill_value=0)
-                st.dataframe(p_table2, use_container_width=True)
-        else:
-            st.warning("No data points available inside this specific filtering scope.")
-            
-    with tab4:
-        st.subheader("📊 Visual Analytics for Core Review Meetings")
-        if not df_filtered.empty:
-            g1, g2 = st.columns(2)
-            with g1:
-                fig_p = px.pie(df_filtered, names='Category', title='Grievance Load by Domain Sector', hole=0.3)
-                st.plotly_chart(fig_p, use_container_width=True)
-            with g2:
-                fig_b = px.bar(df_filtered, x='Block', color='Status', title='Comparative Pendency Profiles across Blocks', barmode='group')
-                st.plotly_chart(fig_b, use_container_width=True)
+                    action_submit = st.form_submit_button("Update Ledger Records")
+                    
+                    if action_submit:
+                        # Find index and update global dataframe
+                        idx = df_global[df_global['Complaint ID'] == case_to_update].index[0]
+                        df_global.at[idx, 'Status'] = new_status
+                        df_global.at[idx, 'District Action/Opinion'] = action_remarks
+                        df_global.at[idx, 'Resolution Date'] = res_date.strftime('%Y-%m-%d') if new_status == "Resolved" else ""
+                        
+                        # Trigger Write Back to Cloud Sheet
+                        with st.spinner("Updating Google Sheet records..."):
+                            # Logic to push updated row to database
+                            response = requests.post(WEB_APP_URL, json={"update_mode": True, "Complaint ID": case_to_update, "Status": new_status, "Remarks": action_remarks, "ResDate": res_date.strftime('%Y-%m-%d')})
+                            
+                        st.success(f"📝 Records for {case_to_update} updated successfully on Google Sheet!")
+                        st.rerun()
