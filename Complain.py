@@ -15,7 +15,7 @@ GSHEET_URL = "https://docs.google.com/spreadsheets/d/1kQx4dwtKNAQ2mKAvpohbAYLdKC
 
 # App Script Web App URL for directly writing data to Google Sheet
 # (This bypasses the need for Streamlit Cloud Secrets)
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzL5nQ6l-nE_I0U7yOas8jC4h7C6g8uA3WNZ_g8L_m0_8wUv1Hw7g6C_xREc7G4p9q4/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwCvpBKvr-3Jp8sHZQubz16Yl6Um0F7DqLgDj7L60ZONHfvVYieZm539ibjo0Iyu1ek/exec"
 
 def load_data():
     try:
