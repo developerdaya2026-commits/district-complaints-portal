@@ -204,22 +204,32 @@ else:
                 uploaded_file = st.file_uploader("Attach Supporting Document (Max 2MB, PDF/JPG)", type=["pdf", "jpg", "png"])
                 
                 file_payload = ""
+                file_type = ""
                 if uploaded_file is not None:
                     if uploaded_file.size > 2 * 1024 * 1024:
                         st.error("❌ Transmission Rejected: Attached file exceeds the structural limit of 2MB.")
                     else:
                         file_payload = base64.b64encode(uploaded_file.read()).decode()
+                        file_type = uploaded_file.type
                         st.success("✅ Document uploaded successfully and compressed for cloud sync.")
                 
                 if st.form_submit_button("Transmit Records to District HQ"):
                     if not description.strip():
                         st.error("❌ Description matrix cannot be left blank.")
                     else:
+                        # यहाँ ध्यान दें: Apps Script को सही की (Keys) भेजने के लिए मॉडिफाई किया गया है
                         new_data = {
-                            "Date": str(issue_date), "Jurisdiction": assigned_office, "Complaint ID": comp_id,
-                            "Reference No": ref_no, "Category": category, "Status": "Pending",
-                            "Description": description, "District Action/Opinion": "", "Resolution Date": "",
-                            "Uploaded File URL": "Attachment Loaded" if file_payload else "None",
+                            "Date": str(issue_date), 
+                            "Jurisdiction": assigned_office, 
+                            "Complaint ID": comp_id,
+                            "Reference No": ref_no, 
+                            "Category": category, 
+                            "Status": "Pending",
+                            "Description": description, 
+                            "District Action/Opinion": "", 
+                            "Resolution Date": "",
+                            "file_payload": file_payload,
+                            "file_type": file_type,
                             "Submitted By Code": st.session_state["current_user"]
                         }
                         with st.spinner("Pushing record to secure cloud database..."):
@@ -240,7 +250,15 @@ else:
                 if filtered_df.empty:
                     st.info("📂 No past grievances found for this office jurisdiction.")
                 else:
-                    st.dataframe(filtered_df, use_container_width=True)
+                    # ब्लॉक स्तर पर भी क्लिक करने योग्य डाउनलोड लिंक कॉलम सेट किया गया
+                    st.data_editor(
+                        filtered_df,
+                        column_config={
+                            "Uploaded File URL": st.column_config.LinkColumn("📄 View Attachment", display_text="Open File")
+                        },
+                        disabled=True,
+                        use_container_width=True
+                    )
             else:
                 st.dataframe(df_global[df_global['Jurisdiction'] == assigned_office], use_container_width=True)
 
@@ -254,7 +272,15 @@ else:
         
         with adm_tab1:
             st.subheader("Global Grievance Registry Dashboard")
-            st.dataframe(df_global, use_container_width=True)
+            # जिला स्तर पर फ़ाइल डाउनलोड करने के लिए डायरेक्ट 'LinkColumn' सेट किया गया
+            st.data_editor(
+                df_global,
+                column_config={
+                    "Uploaded File URL": st.column_config.LinkColumn("📄 Attached Document", display_text="View Document")
+                },
+                disabled=True,
+                use_container_width=True
+            )
             
         with adm_tab2:
             if not df_global.empty:
