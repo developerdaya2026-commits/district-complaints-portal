@@ -217,7 +217,6 @@ else:
                     if not description.strip():
                         st.error("❌ Description matrix cannot be left blank.")
                     else:
-                        # यहाँ ध्यान दें: Apps Script को सही की (Keys) भेजने के लिए मॉडिफाई किया गया है
                         new_data = {
                             "Date": str(issue_date), 
                             "Jurisdiction": assigned_office, 
@@ -250,11 +249,17 @@ else:
                 if filtered_df.empty:
                     st.info("📂 No past grievances found for this office jurisdiction.")
                 else:
-                    # ब्लॉक स्तर पर भी क्लिक करने योग्य डाउनलोड लिंक कॉलम सेट किया गया
+                    # Filter out error strings or non-link values to prevent issues in LinkColumn
+                    display_df = filtered_df.copy()
+                    display_df['Link Display'] = display_df['Uploaded File URL'].apply(
+                        lambda x: x if str(x).startswith("http") else ""
+                    )
+                    
                     st.data_editor(
-                        filtered_df,
+                        display_df,
                         column_config={
-                            "Uploaded File URL": st.column_config.LinkColumn("📄 View Attachment", display_text="Open File")
+                            "Link Display": st.column_config.LinkColumn("📄 View Attachment", display_text="Open File"),
+                            "Uploaded File URL": st.column_config.TextColumn("Uploaded File URL")
                         },
                         disabled=True,
                         use_container_width=True
@@ -272,11 +277,17 @@ else:
         
         with adm_tab1:
             st.subheader("Global Grievance Registry Dashboard")
-            # जिला स्तर पर फ़ाइल डाउनलोड करने के लिए डायरेक्ट 'LinkColumn' सेट किया गया
+            
+            display_df = df_global.copy()
+            display_df['Link Display'] = display_df['Uploaded File URL'].apply(
+                lambda x: x if str(x).startswith("http") else ""
+            )
+            
             st.data_editor(
-                df_global,
+                display_df,
                 column_config={
-                    "Uploaded File URL": st.column_config.LinkColumn("📄 Attached Document", display_text="View Document")
+                    "Link Display": st.column_config.LinkColumn("📄 Attached Document", display_text="View Document"),
+                    "Uploaded File URL": st.column_config.TextColumn("Uploaded File Status / URL")
                 },
                 disabled=True,
                 use_container_width=True
