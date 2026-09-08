@@ -52,7 +52,7 @@ st.markdown("""
 
 # 2. Configuration & API Endpoints
 GSHEET_URL = "https://docs.google.com/spreadsheets/d/1kQx4dwtKNAQ2mKAvpohbAYLdKCh-nqNqQs8AV6VsGSQ/gviz/tq?tqx=out:csv"
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzf971lKgdjOBGHK7kenoJENiPYyHGwi5rxKE8dIqrlR_2u2XUvEOX24x5jOjFMCb6p/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw0fGALpPmNAya9P4MAxBI2WHDeAl_AViRdInR3zc0kyDd6_FhwyMbQIu2qQc_AkRQQ/exec"
 
 # Static Registry for Authentication
 USER_REGISTRY = {
@@ -98,7 +98,8 @@ def load_data():
     except:
         return pd.DataFrame(columns=[
             'Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category', 
-            'Status', 'Description', 'District Action/Opinion', 'Resolution Date', 'Uploaded File URL', 'Submitted By Code'
+            'Status', 'Description', 'District Action/Opinion', 'Resolution Date', 'Uploaded File URL', 'Submitted By Code',
+            'ATR Response File URL'
         ])
 
 df_global = load_data()
@@ -249,18 +250,40 @@ else:
                 if filtered_df.empty:
                     st.info("📂 No past grievances found for this office jurisdiction.")
                 else:
-                    # Filter out error strings or non-link values to prevent issues in LinkColumn
                     display_df = filtered_df.copy()
-                    display_df['Link Display'] = display_df['Uploaded File URL'].apply(
-                        lambda x: x if str(x).startswith("http") else ""
-                    )
+                    
+                    # Show complaint attachment links
+                    if 'Uploaded File URL' in display_df.columns:
+                        display_df['📎 Complaint File'] = display_df['Uploaded File URL'].apply(
+                            lambda x: x if str(x).startswith("http") else ""
+                        )
+                    
+                    # Show ATR response file links (if column exists)
+                    if 'ATR Response File URL' in display_df.columns:
+                        display_df['📎 ATR Response'] = display_df['ATR Response File URL'].apply(
+                            lambda x: x if str(x).startswith("http") else ""
+                        )
+                    
+                    col_config = {
+                        "Uploaded File URL": None,  # Hide raw URL column
+                    }
+                    
+                    if '📎 Complaint File' in display_df.columns:
+                        col_config["📎 Complaint File"] = st.column_config.LinkColumn(
+                            "📎 Complaint File", display_text="📄 Open"
+                        )
+                    
+                    if 'ATR Response File URL' in display_df.columns:
+                        col_config["ATR Response File URL"] = None  # Hide raw URL column
+                    
+                    if '📎 ATR Response' in display_df.columns:
+                        col_config["📎 ATR Response"] = st.column_config.LinkColumn(
+                            "📎 ATR Response", display_text="📄 Open"
+                        )
                     
                     st.data_editor(
                         display_df,
-                        column_config={
-                            "Link Display": st.column_config.LinkColumn("📄 View Attachment", display_text="Open File"),
-                            "Uploaded File URL": st.column_config.TextColumn("Uploaded File URL")
-                        },
+                        column_config=col_config,
                         disabled=True,
                         use_container_width=True
                     )
@@ -279,16 +302,39 @@ else:
             st.subheader("Global Grievance Registry Dashboard")
             
             display_df = df_global.copy()
-            display_df['Link Display'] = display_df['Uploaded File URL'].apply(
-                lambda x: x if str(x).startswith("http") else ""
-            )
+            
+            # Create clickable link columns for complaint attachments
+            if 'Uploaded File URL' in display_df.columns:
+                display_df['📎 Complaint File'] = display_df['Uploaded File URL'].apply(
+                    lambda x: x if str(x).startswith("http") else ""
+                )
+            
+            # Create clickable link columns for ATR response files
+            if 'ATR Response File URL' in display_df.columns:
+                display_df['📎 ATR Response'] = display_df['ATR Response File URL'].apply(
+                    lambda x: x if str(x).startswith("http") else ""
+                )
+            
+            col_config = {
+                "Uploaded File URL": None,  # Hide raw URL column
+            }
+            
+            if '📎 Complaint File' in display_df.columns:
+                col_config["📎 Complaint File"] = st.column_config.LinkColumn(
+                    "📎 Complaint File", display_text="📄 View"
+                )
+            
+            if 'ATR Response File URL' in display_df.columns:
+                col_config["ATR Response File URL"] = None  # Hide raw URL column
+            
+            if '📎 ATR Response' in display_df.columns:
+                col_config["📎 ATR Response"] = st.column_config.LinkColumn(
+                    "📎 ATR Response", display_text="📄 View"
+                )
             
             st.data_editor(
                 display_df,
-                column_config={
-                    "Link Display": st.column_config.LinkColumn("📄 Attached Document", display_text="View Document"),
-                    "Uploaded File URL": st.column_config.TextColumn("Uploaded File Status / URL")
-                },
+                column_config=col_config,
                 disabled=True,
                 use_container_width=True
             )
@@ -311,14 +357,53 @@ else:
                 
                 st.warning(f"**Origin Jurisdiction:** {case_row['Jurisdiction']} | **Functional Details:** {case_row['Description']}")
                 
+                # Show existing complaint attachment if available
+                if 'Uploaded File URL' in case_row and str(case_row['Uploaded File URL']).startswith("http"):
+                    st.info(f"📎 **Complaint Attachment Available:** [Click to View / Download]({case_row['Uploaded File URL']})")
+                
+                # Show existing ATR response file if available
+                if 'ATR Response File URL' in case_row and str(case_row.get('ATR Response File URL', '')).startswith("http"):
+                    st.success(f"📎 **Previous ATR Response File:** [Click to View / Download]({case_row['ATR Response File URL']})")
+                
                 with st.form(key="hq_atr_form"):
                     new_status = st.selectbox("Modify Execution Status", ["Pending", "In Progress", "Resolved"])
                     action_remarks = st.text_area("Official Orders / Technical Directives", value=case_row['District Action/Opinion'])
                     res_date = st.date_input("Closure Date", value=date.today())
                     
+                    # ATR Response file upload for District Admin
+                    st.markdown("---")
+                    st.markdown("**📤 Attach Supporting Document for ATR Response (Optional)**")
+                    atr_file = st.file_uploader(
+                        "Upload ATR Response Document (Max 2MB, PDF/JPG/PNG)", 
+                        type=["pdf", "jpg", "png"],
+                        key="atr_file_upload"
+                    )
+                    
+                    atr_file_payload = ""
+                    atr_file_type = ""
+                    if atr_file is not None:
+                        if atr_file.size > 2 * 1024 * 1024:
+                            st.error("❌ File exceeds the 2MB limit.")
+                        else:
+                            atr_file_payload = base64.b64encode(atr_file.read()).decode()
+                            atr_file_type = atr_file.type
+                            st.success("✅ ATR Response document ready for upload.")
+                    
                     if st.form_submit_button("Publish ATR Directive to Cloud"):
                         with st.spinner("Broadcasting changes to edge nodes..."):
-                            requests.post(WEB_APP_URL, json={"update_mode": True, "Complaint ID": case_to_update, "Status": new_status, "Remarks": action_remarks, "ResDate": res_date.strftime('%Y-%m-%d')})
+                            post_data = {
+                                "update_mode": True, 
+                                "Complaint ID": case_to_update, 
+                                "Status": new_status, 
+                                "Remarks": action_remarks, 
+                                "ResDate": res_date.strftime('%Y-%m-%d')
+                            }
+                            # Include ATR file if uploaded
+                            if atr_file_payload:
+                                post_data["atr_file_payload"] = atr_file_payload
+                                post_data["atr_file_type"] = atr_file_type
+                            
+                            requests.post(WEB_APP_URL, json=post_data, timeout=30)
                         st.success("📝 Directives successfully propagated across the secure database infrastructure.")
                         st.rerun()
             else:
