@@ -52,7 +52,7 @@ st.markdown("""
 
 # 2. Configuration & API Endpoints
 GSHEET_URL = "https://docs.google.com/spreadsheets/d/1kQx4dwtKNAQ2mKAvpohbAYLdKCh-nqNqQs8AV6VsGSQ/gviz/tq?tqx=out:csv"
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw0fGALpPmNAya9P4MAxBI2WHDeAl_AViRdInR3zc0kyDd6_FhwyMbQIu2qQc_AkRQQ/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyUVklw8LSbMBYaOBHUR00b4ivVowBP_wGNvlN7RrBCPdvlUxcVIYVmt6sNJqju0nsk/exec"
 
 # Static Registry for Authentication
 USER_REGISTRY = {
