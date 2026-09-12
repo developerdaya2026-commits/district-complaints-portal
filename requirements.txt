@@ -2,3 +2,6 @@ pandas
 plotly
 st-gsheets-connection
 openpyxl
+streamlit
+requests
+pillow
