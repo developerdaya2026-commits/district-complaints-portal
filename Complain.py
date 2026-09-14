@@ -33,26 +33,34 @@ st.markdown("""
 
         /* Header Banner Styling */
         .corporate-header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
-            padding: 26px 30px;
-            border-radius: 12px;
-            color: #ffffff;
-            margin-bottom: 25px;
-            box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.15);
-            text-align: center;
+            background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%) !important;
+            padding: 26px 30px !important;
+            border-radius: 12px !important;
+            color: #ffffff !important;
+            margin-bottom: 25px !important;
+            box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.15) !important;
+            text-align: center !important;
+        }
+        .corporate-header,
+        .corporate-header *,
+        .corporate-header h1,
+        .corporate-header h1 * {
+            color: #ffffff !important;
         }
         .corporate-header h1 {
             color: #ffffff !important;
-            margin: 0;
-            font-size: 30px !important;
+            margin: 0 0 8px 0 !important;
+            font-size: 28px !important;
             font-weight: 800 !important;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.8px !important;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4) !important;
         }
-        .corporate-header p {
+        .corporate-header p,
+        .corporate-header p * {
             color: #cbd5e1 !important;
-            margin: 8px 0 0 0;
+            margin: 0 !important;
             font-size: 16px !important;
-            font-weight: 500;
+            font-weight: 500 !important;
         }
 
         /* Headings */
@@ -60,24 +68,82 @@ st.markdown("""
         h3 { font-size: 21px !important; font-weight: 700 !important; color: #1e3a8a !important; }
         h4 { font-size: 18px !important; font-weight: 600 !important; color: #334155 !important; }
 
-        /* Tabs font size and active tab indicator */
+        /* Tabs font size, inactive appearance and active tab indicator */
         .stTabs [data-baseweb="tab-list"] {
-            gap: 12px;
-            background-color: #ffffff;
-            padding: 8px;
-            border-radius: 10px;
-            border: 1px solid #e2e8f0;
+            gap: 10px !important;
+            background-color: #ffffff !important;
+            padding: 8px 10px !important;
+            border-radius: 10px !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
         }
-        .stTabs [data-baseweb="tab"] {
-            font-size: 17px !important;
-            font-weight: 700 !important;
+
+        /* Inactive Tab Styling */
+        .stTabs [data-baseweb="tab"],
+        .stTabs button[role="tab"] {
+            font-size: 16px !important;
+            font-weight: 600 !important;
             padding: 10px 20px !important;
-            border-radius: 8px;
-            color: #475569;
+            border-radius: 8px !important;
+            background-color: #f8fafc !important;
+            border: 1px solid #cbd5e1 !important;
+            color: #334155 !important;
+            transition: all 0.2s ease-in-out !important;
         }
-        .stTabs [aria-selected="true"] {
-            background-color: #1e3a8a !important;
+        .stTabs [data-baseweb="tab"] *,
+        .stTabs [data-baseweb="tab"] p,
+        .stTabs [data-baseweb="tab"] span,
+        .stTabs [data-baseweb="tab"] div,
+        .stTabs button[role="tab"] *,
+        .stTabs button[role="tab"] p,
+        .stTabs button[role="tab"] span,
+        .stTabs button[role="tab"] div {
+            color: #334155 !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+        }
+        .stTabs [data-baseweb="tab"]:hover,
+        .stTabs button[role="tab"]:hover {
+            background-color: #e2e8f0 !important;
+            border-color: #94a3b8 !important;
+        }
+        .stTabs [data-baseweb="tab"]:hover *,
+        .stTabs [data-baseweb="tab"]:hover p,
+        .stTabs [data-baseweb="tab"]:hover span,
+        .stTabs button[role="tab"]:hover *,
+        .stTabs button[role="tab"]:hover p,
+        .stTabs button[role="tab"]:hover span {
+            color: #0f172a !important;
+        }
+
+        /* Active / Selected Tab (Selected Blue Tab with Crisp, Bright White Text) */
+        .stTabs [data-baseweb="tab"][aria-selected="true"],
+        .stTabs button[role="tab"][aria-selected="true"] {
+            background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%) !important;
+            border: 1px solid #1e3a8a !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 8px -1px rgba(30, 58, 138, 0.35) !important;
+        }
+        .stTabs [data-baseweb="tab"][aria-selected="true"] *,
+        .stTabs [data-baseweb="tab"][aria-selected="true"] p,
+        .stTabs [data-baseweb="tab"][aria-selected="true"] span,
+        .stTabs [data-baseweb="tab"][aria-selected="true"] div,
+        .stTabs button[role="tab"][aria-selected="true"] *,
+        .stTabs button[role="tab"][aria-selected="true"] p,
+        .stTabs button[role="tab"][aria-selected="true"] span,
+        .stTabs button[role="tab"][aria-selected="true"] div {
+            background-color: transparent !important;
             color: #ffffff !important;
+            fill: #ffffff !important;
+            font-weight: 800 !important;
+            font-size: 16px !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+        }
+
+        /* Clean Tab Indicators */
+        .stTabs [data-baseweb="tab-highlight"],
+        .stTabs [data-baseweb="tab-border"] {
+            display: none !important;
         }
 
         /* Buttons Styling */
@@ -370,10 +436,10 @@ df_global = load_data()
 
 # Header Component
 st.markdown("""
-    <div class="corporate-header">
-        <h1>GOVERNMENT OF BIHAR | DISTRICT ADMINISTRATION NAWADA</h1>
-        <p>Integrated Grievance Redressal & Operational IT Monitoring Infrastructure</p>
-    </div>
+<div class="corporate-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 26px 30px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.15); text-align: center;">
+    <h1 style="color: #ffffff !important; margin: 0 0 8px 0; font-size: 28px !important; font-weight: 800 !important; letter-spacing: 0.8px; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">GOVERNMENT OF BIHAR | DISTRICT ADMINISTRATION NAWADA</h1>
+    <p style="color: #cbd5e1 !important; margin: 0; font-size: 16px !important; font-weight: 500; letter-spacing: 0.3px;">Integrated Grievance Redressal &amp; Operational IT Monitoring Infrastructure</p>
+</div>
 """, unsafe_allow_html=True)
 
 # ==========================================
