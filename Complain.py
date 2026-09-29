@@ -1,14 +1,30 @@
 import streamlit as st
+from supabase import create_client, Client
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date
-import requests
-import base64
 import io
+import uuid
 from PIL import Image
 
-# 1. Page & Corporate Theme Configuration
+# =========================================================================
+# 0. SUPABASE CLIENT INITIALIZATION
+# =========================================================================
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["supabase"]["SUPABASE_URL"]
+    key = st.secrets["supabase"]["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
+
+# BUCKET NAME FOR DOCUMENT STORAGE
+STORAGE_BUCKET = "complaint-documents"
+
+# =========================================================================
+# 1. PAGE & CORPORATE THEME CONFIGURATION
+# =========================================================================
 st.set_page_config(
     page_title="Nawada District Monitoring System",
     layout="wide",
@@ -68,7 +84,7 @@ st.markdown("""
         h3 { font-size: 21px !important; font-weight: 700 !important; color: #1e3a8a !important; }
         h4 { font-size: 18px !important; font-weight: 600 !important; color: #334155 !important; }
 
-        /* Tabs font size, inactive appearance and active tab indicator */
+        /* Tabs styling */
         .stTabs [data-baseweb="tab-list"] {
             gap: 10px !important;
             background-color: #ffffff !important;
@@ -107,16 +123,8 @@ st.markdown("""
             background-color: #e2e8f0 !important;
             border-color: #94a3b8 !important;
         }
-        .stTabs [data-baseweb="tab"]:hover *,
-        .stTabs [data-baseweb="tab"]:hover p,
-        .stTabs [data-baseweb="tab"]:hover span,
-        .stTabs button[role="tab"]:hover *,
-        .stTabs button[role="tab"]:hover p,
-        .stTabs button[role="tab"]:hover span {
-            color: #0f172a !important;
-        }
 
-        /* Active / Selected Tab (Selected Blue Tab with Crisp, Bright White Text) */
+        /* Active Tab */
         .stTabs [data-baseweb="tab"][aria-selected="true"],
         .stTabs button[role="tab"][aria-selected="true"] {
             background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%) !important;
@@ -140,7 +148,6 @@ st.markdown("""
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
         }
 
-        /* Clean Tab Indicators */
         .stTabs [data-baseweb="tab-highlight"],
         .stTabs [data-baseweb="tab-border"] {
             display: none !important;
@@ -206,7 +213,7 @@ st.markdown("""
             margin: 6px 0 0 0;
         }
 
-        /* Arranged Dossier Boxes for Description & District Action */
+        /* Arranged Dossier Boxes */
         .dossier-card {
             background: #ffffff;
             border: 1px solid #cbd5e1;
@@ -291,10 +298,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. Configuration & API Endpoints
-GSHEET_URL = "https://docs.google.com/spreadsheets/d/1kQx4dwtKNAQ2mKAvpohbAYLdKCh-nqNqQs8AV6VsGSQ/gviz/tq?tqx=out:csv"
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxtSAWQV_7y1snvpUR8KV1-Cx2S3d_ZjG-qQZueU7e1pv-MJDKlvr2RrHxHxC0yVq2x/exec"
-
 # Static Registry for Authentication
 USER_REGISTRY = {
     "OFF-SADAR-SDO": {"name": "Sadar Subdivision Office (Nawada)", "role": "Block"},
@@ -340,28 +343,27 @@ if not st.session_state["authenticated"]:
         st.session_state["current_user"] = persisted_user
 
 # =========================================================================
-# AUTO-COMPRESSION FOR CRISP A4 PRINT-READY RESOLUTION
+# FILE COMPRESSION & SUPABASE STORAGE UPLOAD FUNCTION
 # =========================================================================
-def process_and_compress_file(uploaded_file):
+def process_compress_and_upload(uploaded_file, folder_prefix="complaints") -> str:
     """
-    Intelligently compresses uploaded images (JPEG/PNG) or prepares PDFs.
-    For images, it resizes to high-resolution (max 1800px dimension = ~200 DPI on A4)
-    and compresses with JPEG quality 82. This ensures crisp typography, stamp/seal,
-    and handwriting readability on official printouts while keeping file size small (200-500 KB).
-    Returns: (base64_payload, file_type, original_kb, final_kb)
+    Compresses image if necessary and uploads the file directly to Supabase Storage Bucket.
+    Returns: Public URL string of the uploaded document.
     """
-    file_bytes = uploaded_file.read()
-    orig_kb = len(file_bytes) // 1024
-    file_type = uploaded_file.type or "application/octet-stream"
+    if uploaded_file is None:
+        return ""
 
+    file_bytes = uploaded_file.read()
+    file_type = uploaded_file.type or "application/octet-stream"
+    file_extension = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "bin"
+
+    # Intelligent Compression for Images
     if file_type in ["image/jpeg", "image/jpg", "image/png"]:
         try:
             img = Image.open(io.BytesIO(file_bytes))
-            # Convert RGBA/Palette mode to RGB for clean JPEG compression
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
             
-            # Max dimension 1800px maintains ~200 DPI on standard A4 (high print fidelity)
             max_dim = 1800
             if max(img.size) > max_dim:
                 ratio = max_dim / float(max(img.size))
@@ -372,19 +374,31 @@ def process_and_compress_file(uploaded_file):
             img.save(out_buf, format="JPEG", quality=82, optimize=True)
             compressed_bytes = out_buf.getvalue()
             
-            # Use compressed bytes if smaller
             if len(compressed_bytes) < len(file_bytes):
                 file_bytes = compressed_bytes
                 file_type = "image/jpeg"
         except Exception:
             pass
 
-    final_kb = len(file_bytes) // 1024
-    b64_payload = base64.b64encode(file_bytes).decode("utf-8")
-    return b64_payload, file_type, orig_kb, final_kb
+    # Unique File Path Creation in Supabase Storage
+    unique_filename = f"{folder_prefix}/{uuid.uuid4().hex}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{file_extension}"
+
+    try:
+        # Upload bytes to Supabase Storage
+        supabase.storage.from_(STORAGE_BUCKET).upload(
+            path=unique_filename,
+            file=file_bytes,
+            file_options={"content-type": file_type}
+        )
+        # Generate Public URL
+        public_url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(unique_filename)
+        return public_url
+    except Exception as e:
+        st.error(f"❌ Storage Upload Error: {e}")
+        return ""
 
 # =========================================================================
-# DATA LOADING & STATUS NORMALIZATION
+# DATA LOADING & STATUS NORMALIZATION (SUPABASE READ)
 # =========================================================================
 def standardize_status(status_str, remarks, res_date):
     """Cleanly normalizes status so 'Disposed / ATR Completed' appears accurately in charts."""
@@ -393,8 +407,7 @@ def standardize_status(status_str, remarks, res_date):
         return "Disposed"
     elif s in ["In Progress", "Under Enquiry", "In Process", "Under Process"]:
         return "In Progress"
-    elif s == "Pending" or s == "" or s == "nan":
-        # If District has already provided official remarks or closure date, classify as Disposed!
+    elif s == "Pending" or s == "" or s == "nan" or s == "None":
         if str(remarks).strip() != "" and str(res_date).strip() != "":
             return "Disposed"
         elif str(remarks).strip() != "":
@@ -403,13 +416,23 @@ def standardize_status(status_str, remarks, res_date):
     return s
 
 def load_data():
+    """Fetches all grievance records directly from Supabase DB ('complaints' table)."""
     try:
-        df = pd.read_csv(GSHEET_URL)
-        if not df.empty and 'Date' in df.columns:
+        response = supabase.table("complaints").select("*").execute()
+        data = response.data
+        if not data:
+            return pd.DataFrame(columns=[
+                'Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category', 
+                'Status', 'Description', 'District Action/Opinion', 'Resolution Date', 
+                'Uploaded File URL', 'Submitted By Code', 'ATR Response File URL', 'Normalized_Status'
+            ])
+
+        df = pd.DataFrame(data)
+        if 'Date' in df.columns and not df.empty:
             df['Date'] = pd.to_datetime(df['Date']).dt.date
         df = df.fillna("")
         
-        # Ensure all expected columns exist
+        # Ensure column compatibility
         expected_cols = [
             'Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category', 
             'Status', 'Description', 'District Action/Opinion', 'Resolution Date', 
@@ -425,7 +448,8 @@ def load_data():
             axis=1
         )
         return df
-    except Exception:
+    except Exception as e:
+        st.error(f"⚠️ Error fetching data from Supabase: {e}")
         return pd.DataFrame(columns=[
             'Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category', 
             'Status', 'Description', 'District Action/Opinion', 'Resolution Date', 
@@ -436,9 +460,9 @@ df_global = load_data()
 
 # Header Component
 st.markdown("""
-<div class="corporate-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 26px 30px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.15); text-align: center;">
-    <h1 style="color: #ffffff !important; margin: 0 0 8px 0; font-size: 28px !important; font-weight: 800 !important; letter-spacing: 0.8px; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">GOVERNMENT OF BIHAR | DISTRICT ADMINISTRATION NAWADA</h1>
-    <p style="color: #cbd5e1 !important; margin: 0; font-size: 16px !important; font-weight: 500; letter-spacing: 0.3px;">Integrated Grievance Redressal &amp; Operational IT Monitoring Infrastructure</p>
+<div class="corporate-header">
+    <h1>GOVERNMENT OF BIHAR | DISTRICT ADMINISTRATION NAWADA</h1>
+    <p>Integrated Grievance Redressal &amp; Operational IT Monitoring Infrastructure</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -479,7 +503,6 @@ if not st.session_state["authenticated"]:
                 if input_otp == required_otp:
                     st.session_state["authenticated"] = True
                     st.session_state["current_user"] = st.session_state["temp_uid"]
-                    # Store session in query parameters to prevent auto logout
                     st.query_params["session_auth"] = st.session_state["temp_uid"]
                     st.success("Authorization Successful! Connecting to secure server...")
                     st.rerun()
@@ -518,7 +541,7 @@ else:
             del st.query_params["session_auth"]
         st.rerun()
 
-    # Helper function to render a formatted Case Dossier Card (Arranged & Wrapped)
+    # Helper function to render a formatted Case Dossier Card
     def render_dossier_card(row_data, is_district=False):
         status_val = row_data.get('Normalized_Status', row_data.get('Status', 'Pending'))
         badge_class = "badge-pending"
@@ -600,53 +623,48 @@ else:
                 
                 description = st.text_area("Detailed Problem Classification / Error Logs (Text will auto-wrap)", height=140)
                 
-                # Intelligent Auto-Compressing File Uploader
+                # File Uploader
                 uploaded_file = st.file_uploader(
-                    "Attach Supporting Document (PDF, JPG, PNG - Auto-compressed to high-clarity A4 print resolution)", 
+                    "Attach Supporting Document (PDF, JPG, PNG - Auto-compressed & stored in Supabase Storage)", 
                     type=["pdf", "jpg", "png"]
                 )
-                
-                file_payload = ""
-                file_type = ""
-                if uploaded_file is not None:
-                    if uploaded_file.size > 10 * 1024 * 1024:
-                        st.error("❌ Transmission Rejected: Attached file exceeds the limit of 10MB.")
-                    else:
-                        file_payload, file_type, orig_kb, final_kb = process_and_compress_file(uploaded_file)
-                        if orig_kb > final_kb:
-                            st.success(f"✅ Document auto-compressed: **{orig_kb} KB ➔ {final_kb} KB** (Crystal-clear print resolution preserved for District HQ).")
-                        else:
-                            st.success(f"✅ Document ready for cloud sync ({final_kb} KB).")
                 
                 if st.form_submit_button("🚀 Transmit Records to District HQ", use_container_width=True):
                     if not description.strip():
                         st.error("❌ Description matrix cannot be left blank.")
                     else:
-                        new_data = {
-                            "Date": str(issue_date), 
-                            "Jurisdiction": assigned_office, 
-                            "Complaint ID": comp_id,
-                            "Reference No": ref_no, 
-                            "Category": category, 
-                            "Status": "Pending",
-                            "Description": description, 
-                            "District Action/Opinion": "", 
-                            "Resolution Date": "",
-                            "file_payload": file_payload,
-                            "file_type": file_type,
-                            "Submitted By Code": st.session_state["current_user"]
-                        }
-                        with st.spinner("Pushing record to secure cloud database..."):
+                        with st.spinner("Uploading document & storing record in Supabase..."):
+                            # 1. Upload File to Supabase Storage if provided
+                            file_url = ""
+                            if uploaded_file is not None:
+                                if uploaded_file.size > 10 * 1024 * 1024:
+                                    st.error("❌ Transmission Rejected: Attached file exceeds 10MB.")
+                                    st.stop()
+                                file_url = process_compress_and_upload(uploaded_file, folder_prefix="grievances")
+
+                            # 2. Insert Record in Supabase DB
+                            new_data = {
+                                "Date": str(issue_date), 
+                                "Jurisdiction": assigned_office, 
+                                "Complaint ID": comp_id,
+                                "Reference No": ref_no, 
+                                "Category": category, 
+                                "Status": "Pending",
+                                "Description": description, 
+                                "District Action/Opinion": "", 
+                                "Resolution Date": "",
+                                "Uploaded File URL": file_url,
+                                "Submitted By Code": st.session_state["current_user"],
+                                "ATR Response File URL": ""
+                            }
+                            
                             try:
-                                response = requests.post(WEB_APP_URL, json=new_data, timeout=30)
-                                if response.status_code == 200:
-                                    st.success(f"🚀 Record Synced! Ticket ID **{comp_id}** has been transmitted.")
-                                    st.balloons()
-                                    st.rerun()
-                                else:
-                                    st.warning("⚠️ High latency on cloud network. Data saved to buffer.")
-                            except Exception:
-                                st.warning("⚠️ Cloud connection timeout. Buffer preserved.")
+                                supabase.table("complaints").insert(new_data).execute()
+                                st.success(f"🚀 Record Synced! Ticket ID **{comp_id}** has been transmitted.")
+                                st.balloons()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Failed to submit complaint to Supabase: {e}")
         
         with tab_report:
             st.subheader("📋 Historical Ledger & Action Taken Report (ATR)")
@@ -656,7 +674,6 @@ else:
                 if filtered_df.empty:
                     st.info("📂 No past grievances found for this office jurisdiction.")
                 else:
-                    # Quick KPI Summary for Block
                     total_block = len(filtered_df)
                     pending_block = len(filtered_df[filtered_df['Normalized_Status'] == "Pending"])
                     prog_block = len(filtered_df[filtered_df['Normalized_Status'] == "In Progress"])
@@ -674,7 +691,6 @@ else:
 
                     display_df = filtered_df.copy()
                     
-                    # Clickable links
                     if 'Uploaded File URL' in display_df.columns:
                         display_df['📎 Complaint File'] = display_df['Uploaded File URL'].apply(
                             lambda x: x if str(x).startswith("http") else ""
@@ -704,7 +720,6 @@ else:
                         use_container_width=True
                     )
 
-                    # Dossier Inspector for Wrapped and Arranged Reading
                     st.markdown("---")
                     st.markdown("### 🔍 Case Dossier & Official ATR Inspector")
                     selected_cpl = st.selectbox(
@@ -730,14 +745,11 @@ else:
             "🛡️ Security Desk (Credential Control)"
         ])
         
-        # ----------------------------------------------------
-        # TAB 1: LIVE EXPLORER WITH WRAPPED & ARRANGED DOSSIER
-        # ----------------------------------------------------
+        # TAB 1: LIVE EXPLORER
         with adm_tab1:
             st.subheader("Global Grievance Registry Dashboard")
             
             if not df_global.empty:
-                # Top Filter Bar
                 f_col1, f_col2, f_col3 = st.columns(3)
                 with f_col1:
                     filter_status = st.selectbox("Filter by Execution Status", ["All Statuses", "Pending", "In Progress", "Disposed"])
@@ -756,7 +768,6 @@ else:
                 if filter_cat != "All Categories":
                     filtered_global = filtered_global[filtered_global['Category'] == filter_cat]
 
-                # Clickable Links
                 filtered_global['📎 Complaint File'] = filtered_global['Uploaded File URL'].apply(
                     lambda x: x if str(x).startswith("http") else ""
                 )
@@ -783,7 +794,6 @@ else:
                     use_container_width=True
                 )
 
-                # Arranged Dossier Card View
                 st.markdown("---")
                 st.markdown("### 🖨️ Detailed Case File & Official ATR Dossier")
                 if not filtered_global.empty:
@@ -797,14 +807,11 @@ else:
             else:
                 st.info("Database empty.")
 
-        # ----------------------------------------------------
-        # TAB 2: OPERATIONAL MATRIX CHARTS (SHOWING DISPOSED & PENDING)
-        # ----------------------------------------------------
+        # TAB 2: OPERATIONAL MATRIX CHARTS
         with adm_tab2:
             st.subheader("Operational Analytics & Redressal Performance")
             
             if not df_global.empty:
-                # 1. Executive Summary KPI Metric Cards
                 total_complaints = len(df_global)
                 pending_count = len(df_global[df_global['Normalized_Status'] == "Pending"])
                 progress_count = len(df_global[df_global['Normalized_Status'] == "In Progress"])
@@ -825,18 +832,15 @@ else:
 
                 st.markdown("---")
 
-                # Dedicated Color Palette for Statuses
                 STATUS_COLOR_MAP = {
-                    "Pending": "#ef4444",      # Coral Red
-                    "In Progress": "#f59e0b",  # Amber Orange
-                    "Disposed": "#10b981"      # Emerald Green
+                    "Pending": "#ef4444",
+                    "In Progress": "#f59e0b",
+                    "Disposed": "#10b981"
                 }
 
-                # 2. Charts Section
                 ch_col1, ch_col2 = st.columns(2)
                 
                 with ch_col1:
-                    # Comprehensive Status Donut Chart
                     status_counts = df_global['Normalized_Status'].value_counts().reset_index()
                     status_counts.columns = ['Status', 'Count']
                     fig_status = px.pie(
@@ -853,7 +857,6 @@ else:
                     st.plotly_chart(fig_status, use_container_width=True)
 
                 with ch_col2:
-                    # Sector Domain Distribution
                     cat_counts = df_global['Category'].value_counts().reset_index()
                     cat_counts.columns = ['Category', 'Count']
                     fig_cat = px.bar(
@@ -861,13 +864,12 @@ else:
                         x='Category',
                         y='Count',
                         color='Category',
-                        title='Grievance Volume by Sector Domain (RTPS, Lok Shikayat, etc.)',
+                        title='Grievance Volume by Sector Domain',
                         text_auto=True
                     )
                     fig_cat.update_layout(font=dict(size=14), showlegend=False)
                     st.plotly_chart(fig_cat, use_container_width=True)
 
-                # 3. Block-wise Redressal Performance (Stacked Bar showing Pending vs Disposed per Block)
                 st.markdown("#### 🏢 Node-wise Performance: Pending vs Disposed Breakdown")
                 block_status_df = df_global.groupby(['Jurisdiction', 'Normalized_Status']).size().reset_index(name='Count')
                 fig_block = px.bar(
@@ -875,7 +877,7 @@ else:
                     x='Jurisdiction', 
                     y='Count', 
                     color='Normalized_Status',
-                    title='Block / Subdivision Performance Matrix (Pending, In Progress & Disposed Cases)',
+                    title='Block / Subdivision Performance Matrix',
                     barmode='group',
                     color_discrete_map=STATUS_COLOR_MAP,
                     text_auto=True
@@ -887,13 +889,10 @@ else:
                     height=500
                 )
                 st.plotly_chart(fig_block, use_container_width=True)
-
             else:
                 st.info("No data available for analytical computation.")
 
-        # ----------------------------------------------------
-        # TAB 3: ACTION TAKEN CELL (ATR) MODULE
-        # ----------------------------------------------------
+        # TAB 3: ACTION TAKEN CELL (ATR) MODULE (SUPABASE UPDATE)
         with adm_tab3:
             st.subheader("Issue Evaluation & ATR Insertion Module")
             
@@ -904,12 +903,10 @@ else:
                 )
                 case_row = df_global[df_global['Complaint ID'] == case_to_update].iloc[0]
                 
-                # Render Full Case Dossier Before Action
                 render_dossier_card(case_row, is_district=True)
                 
                 st.markdown("#### ✍️ Enter Official District ATR Directive")
                 with st.form(key="hq_atr_form"):
-                    # Options now explicitly include 'Disposed' so it reflects in the graphs!
                     current_stat = case_row.get('Normalized_Status', 'Pending')
                     status_options = ["Pending", "In Progress", "Disposed"]
                     default_idx = status_options.index(current_stat) if current_stat in status_options else 0
@@ -922,55 +919,41 @@ else:
                     )
                     res_date = st.date_input("ATR Resolution Date", value=date.today())
                     
-                    # Auto-Compressing File Uploader for ATR Response Document
                     st.markdown("---")
                     st.markdown("**📤 Attach Supporting ATR Directive Document (Optional, PDF / Image)**")
                     atr_file = st.file_uploader(
-                        "Upload ATR Response File (Auto-compressed to high-clarity A4 print resolution)", 
+                        "Upload ATR Response File (Auto-compressed & uploaded to Supabase Storage)", 
                         type=["pdf", "jpg", "png"],
                         key="atr_file_upload"
                     )
                     
-                    atr_file_payload = ""
-                    atr_file_type = ""
-                    if atr_file is not None:
-                        if atr_file.size > 10 * 1024 * 1024:
-                            st.error("❌ File exceeds 10MB limit.")
-                        else:
-                            atr_file_payload, atr_file_type, o_kb, f_kb = process_and_compress_file(atr_file)
-                            if o_kb > f_kb:
-                                st.success(f"✅ ATR document auto-compressed: **{o_kb} KB ➔ {f_kb} KB** (Print resolution preserved).")
-                            else:
-                                st.success(f"✅ ATR document ready ({f_kb} KB).")
-                    
                     if st.form_submit_button("⚖️ Publish ATR Directive to Cloud Database", use_container_width=True):
-                        with st.spinner("Broadcasting changes to edge nodes..."):
-                            post_data = {
-                                "update_mode": True, 
-                                "Complaint ID": case_to_update, 
-                                "Status": new_status, 
-                                "Remarks": action_remarks, 
-                                "ResDate": res_date.strftime('%Y-%m-%d')
+                        with st.spinner("Publishing update to Supabase DB & Storage..."):
+                            # 1. Upload ATR Document if attached
+                            atr_file_url = case_row.get('ATR Response File URL', '')
+                            if atr_file is not None:
+                                uploaded_atr_url = process_compress_and_upload(atr_file, folder_prefix="atr_responses")
+                                if uploaded_atr_url:
+                                    atr_file_url = uploaded_atr_url
+
+                            # 2. Update Record in Supabase DB
+                            update_payload = {
+                                "Status": new_status,
+                                "District Action/Opinion": action_remarks,
+                                "Resolution Date": res_date.strftime('%Y-%m-%d'),
+                                "ATR Response File URL": atr_file_url
                             }
-                            if atr_file_payload:
-                                post_data["atr_file_payload"] = atr_file_payload
-                                post_data["atr_file_type"] = atr_file_type
                             
                             try:
-                                res = requests.post(WEB_APP_URL, json=post_data, timeout=30)
-                                if res.status_code == 200:
-                                    st.success(f"📝 Directives published! Status updated to **{new_status}**.")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Server returned non-200 status code.")
+                                supabase.table("complaints").update(update_payload).eq("Complaint ID", case_to_update).execute()
+                                st.success(f"📝 Directives published! Status updated to **{new_status}**.")
+                                st.rerun()
                             except Exception as e:
-                                st.error(f"❌ Connection error: {e}")
+                                st.error(f"❌ Failed to update ATR in Supabase: {e}")
             else:
                 st.info("No pending tasks available.")
 
-        # ----------------------------------------------------
-        # TAB 4: SECURITY & CREDENTIAL CONTROL
-        # ----------------------------------------------------
+        # TAB 4: SECURITY DESK
         with adm_tab4:
             st.subheader("🔑 Central Administrative Credentials Desk")
             target_user = st.selectbox("Select Office Jurisdiction Node to Reset", list(USER_REGISTRY.keys()))
