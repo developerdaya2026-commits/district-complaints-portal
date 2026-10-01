@@ -15,16 +15,15 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # Initialize Supabase Client
 @st.cache_resource
 def init_supabase() -> Client:
     try:
-        url = st.secrets["supabase"]["https://xzazqnzmmpkabtuosgze.supabase.co"]
-        key = st.secrets["supabase"]["sb_publishable_w1G8oio2PDoJ27VVwoO_Hg_sO9_K0tD"]
+        url = st.secrets["supabase"]["SUPABASE_URL"]
+        key = st.secrets["supabase"]["SUPABASE_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.error(f"⚠️ Supabase Configuration Error: {e}")
+        st.error(f"Supabase Configuration Error: {e}")
         return None
 
 supabase = init_supabase()
