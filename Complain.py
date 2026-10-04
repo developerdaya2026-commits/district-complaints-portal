@@ -39,6 +39,52 @@ st.markdown("""
             font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
         }
 
+        /* Sidebar Styling Fixes */
+        [data-testid="stSidebar"] {
+            background-color: #f1f5f9 !important;
+        }
+
+        /* Profile Card Specific High Contrast Styling */
+        .sidebar-profile-card {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%) !important;
+            border-radius: 14px !important;
+            padding: 20px 16px !important;
+            margin-bottom: 20px !important;
+            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.25) !important;
+            text-align: center !important;
+            border: 1px solid #3b82f6 !important;
+        }
+        .sidebar-profile-card h3 {
+            color: #ffffff !important;
+            margin: 0 0 4px 0 !important;
+            font-size: 18px !important;
+            font-weight: 800 !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5) !important;
+        }
+        .sidebar-profile-card .desig-text {
+            color: #93c5fd !important;
+            margin: 0 0 4px 0 !important;
+            font-size: 14px !important;
+            font-weight: 700 !important;
+        }
+        .sidebar-profile-card .office-text {
+            color: #e2e8f0 !important;
+            margin: 0 0 12px 0 !important;
+            font-size: 13px !important;
+            font-weight: 500 !important;
+        }
+        .sidebar-profile-card .info-badge {
+            background: rgba(255, 255, 255, 0.15) !important;
+            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+            padding: 8px 12px !important;
+            border-radius: 8px !important;
+            font-size: 12px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            color: #ffffff !important;
+        }
+
         /* Enlarge body text & markdown */
         p, span, label, .stMarkdown {
             font-size: 15.5px !important;
@@ -570,22 +616,9 @@ else:
     if not str(photo_url).strip():
         photo_url = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"  # Default Executive Avatar
 
-    # Render Executive Profile Card in Sidebar with Forced High Contrast Text
+    # Render Executive Profile Card in Sidebar with Dark Background & High Contrast White Text
     st.sidebar.markdown(f"""
-        <div class="sidebar-profile-card" style="
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%) !important;
-            border-radius: 14px !important;
-            padding: 20px 16px !important;
-            margin-bottom: 20px !important;
-            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.25) !important;
-            text-align: center !important;
-            border: 1px solid #3b82f6 !important;
-        ">
-            <style>
-                .sidebar-profile-card * {{
-                    color: #ffffff !important;
-                }}
-            </style>
+        <div class="sidebar-profile-card">
             <img src="{photo_url}" style="
                 width: 100px !important;
                 height: 100px !important;
@@ -596,22 +629,12 @@ else:
                 box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
                 display: block !important;
             " />
-            <h3 style="color: #ffffff !important; margin: 0 0 4px 0 !important; font-size: 18px !important; font-weight: 800 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.5) !important;">{officer_name}</h3>
-            <p style="color: #93c5fd !important; margin: 0 0 4px 0 !important; font-size: 14px !important; font-weight: 700 !important;">{designation}</p>
-            <p style="color: #e2e8f0 !important; margin: 0 0 12px 0 !important; font-size: 13px !important; font-weight: 500 !important;">{office_name}</p>
-            <div style="
-                background: rgba(255, 255, 255, 0.15) !important;
-                backdrop-filter: blur(4px) !important;
-                border: 1px solid rgba(255, 255, 255, 0.25) !important;
-                padding: 8px 12px !important;
-                border-radius: 8px !important;
-                font-size: 12px !important;
-                display: flex !important;
-                justify-content: space-between !important;
-                align-items: center !important;
-            ">
-                <span style="color: #ffffff !important; font-weight: 600 !important;"><b style="color: #93c5fd !important;">EPF No:</b> {epf_number}</span>
-                <span style="color: #ffffff !important; font-weight: 600 !important;"><b style="color: #93c5fd !important;">Code:</b> {current_code}</span>
+            <h3>{officer_name}</h3>
+            <p class="desig-text">{designation}</p>
+            <p class="office-text">{office_name}</p>
+            <div class="info-badge">
+                <span><b style="color: #93c5fd;">EPF No:</b> {epf_number}</span>
+                <span><b style="color: #93c5fd;">Code:</b> {current_code}</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
