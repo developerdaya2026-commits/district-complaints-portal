@@ -346,6 +346,19 @@ if not st.session_state["authenticated"]:
         st.session_state["authenticated"] = True
         st.session_state["current_user"] = persisted_user
 
+# FETCH USER PROFILE DIRECTLY FROM SUPABASE DATABASE
+def get_user_profile(user_code):
+    """Fetches official officer profile from Supabase user_profiles table."""
+    if supabase is None or not user_code:
+        return None
+    try:
+        res = supabase.table("user_profiles").select("*").eq("user_code", user_code).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0]
+    except Exception:
+        pass
+    return None
+
 # AUTO-COMPRESSION FOR CRISP A4 PRINT-READY RESOLUTION
 def process_and_compress_file(uploaded_file):
     file_bytes = uploaded_file.read()
@@ -377,9 +390,7 @@ def process_and_compress_file(uploaded_file):
     final_kb = len(file_bytes) // 1024
     return file_bytes, file_type, orig_kb, final_kb
 
-# =========================================================================
-# CONDITION 1: FILE UPLOAD LOGIC (SUPABASE STORAGE)
-# =========================================================================
+# FILE UPLOAD LOGIC (SUPABASE STORAGE)
 def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
     """
     Uploads a file directly to Supabase Storage Bucket 'complaint-documents'
@@ -407,9 +418,7 @@ def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
         st.error(f"Error uploading file to Supabase Storage: {e}")
         return ""
 
-# =========================================================================
-# CONDITION 3: DATA LOADING & FETCHING FROM SUPABASE POSTGRESQL
-# =========================================================================
+# DATA LOADING & FETCHING FROM SUPABASE POSTGRESQL
 def standardize_status(status_str, remarks, res_date):
     s = str(status_str).strip()
     if s in ["Disposed", "Resolved", "Closed", "Disposed / Resolved", "Disposed (ATR Issued)"]:
@@ -540,9 +549,63 @@ else:
     user_info = USER_REGISTRY[st.session_state["current_user"]]
     current_role = user_info["role"]
     assigned_office = user_info["name"]
+    current_code = st.session_state["current_user"]
     
-    st.sidebar.markdown(f"### 👤 Active Session")
-    st.sidebar.info(f"**Office:** {assigned_office}\n\n**Code:** `{st.session_state['current_user']}`\n\n**Role:** `{current_role}`")
+    # Live Profile Integration from Supabase
+    profile_data = get_user_profile(current_code)
+    
+    if profile_data:
+        officer_name = profile_data.get("officer_name") or "Authorized Officer"
+        office_name = profile_data.get("office_name") or assigned_office
+        designation = profile_data.get("designation") or "Desk Representative"
+        epf_number = profile_data.get("epf_no") or "N/A"
+        photo_url = profile_data.get("photo_url") or ""
+    else:
+        officer_name = "Authorized Officer"
+        office_name = assigned_office
+        designation = "Desk Representative"
+        epf_number = "N/A"
+        photo_url = ""
+
+    if not str(photo_url).strip():
+        photo_url = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"  # Default Executive Avatar
+
+    # Render Executive Profile Card in Sidebar
+    st.sidebar.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
+            border-radius: 12px;
+            padding: 16px;
+            color: white;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            text-align: center;
+        ">
+            <img src="{photo_url}" style="
+                width: 72px;
+                height: 72px;
+                border-radius: 50%;
+                border: 3px solid #3b82f6;
+                margin-bottom: 8px;
+                object-fit: cover;
+            " />
+            <h4 style="color: #ffffff !important; margin: 0; font-size: 16px !important; font-weight: 700;">{officer_name}</h4>
+            <p style="color: #93c5fd !important; margin: 2px 0; font-size: 13px !important; font-weight: 600;">{designation}</p>
+            <p style="color: #cbd5e1 !important; margin: 0 0 8px 0; font-size: 12px !important;">{office_name}</p>
+            <div style="
+                background: rgba(255, 255, 255, 0.1);
+                padding: 6px 10px;
+                border-radius: 6px;
+                font-size: 11.5px !important;
+                color: #e2e8f0 !important;
+                display: flex;
+                justify-content: space-between;
+            ">
+                <span><b>EPF No:</b> {epf_number}</span>
+                <span><b>Code:</b> {current_code}</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
     if st.sidebar.button("🔄 Refresh Data From Cloud", use_container_width=True):
         st.cache_data.clear() if hasattr(st, "cache_data") else None
@@ -640,18 +703,13 @@ else:
                     type=["pdf", "jpg", "png"]
                 )
                 
-                # =========================================================
-                # CONDITION 2: DATA INSERTION LOGIC (INSERT TO SUPABASE)
-                # =========================================================
                 if st.form_submit_button("🚀 Transmit Records to District HQ", use_container_width=True):
                     if not description.strip():
                         st.error("❌ Description matrix cannot be left blank.")
                     else:
                         with st.spinner("Uploading document & saving record to Supabase..."):
-                            # Upload attachment to Supabase Storage
                             public_file_url = upload_file_to_supabase(uploaded_file, file_prefix=comp_id) if uploaded_file else ""
 
-                            # Record payload matching Supabase PostgreSQL column structure
                             db_payload = {
                                 "date": str(issue_date),
                                 "jurisdiction": assigned_office,
