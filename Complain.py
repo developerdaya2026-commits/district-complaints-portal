@@ -570,44 +570,48 @@ else:
     if not str(photo_url).strip():
         photo_url = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"  # Default Executive Avatar
 
-    # Render Executive Profile Card in Sidebar with High Contrast & Bigger Photo
+    # Render Executive Profile Card in Sidebar with Forced High Contrast Text
     st.sidebar.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
-            border-radius: 14px;
-            padding: 20px 16px;
-            color: #ffffff !important;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.25);
-            text-align: center;
-            border: 1px solid #3b82f6;
+        <div class="sidebar-profile-card" style="
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%) !important;
+            border-radius: 14px !important;
+            padding: 20px 16px !important;
+            margin-bottom: 20px !important;
+            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.25) !important;
+            text-align: center !important;
+            border: 1px solid #3b82f6 !important;
         ">
+            <style>
+                .sidebar-profile-card * {{
+                    color: #ffffff !important;
+                }}
+            </style>
             <img src="{photo_url}" style="
-                width: 100px;
-                height: 100px;
-                border-radius: 50%;
-                border: 3px solid #60a5fa;
-                margin-bottom: 12px;
-                object-fit: cover;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                width: 100px !important;
+                height: 100px !important;
+                border-radius: 50% !important;
+                border: 3px solid #60a5fa !important;
+                margin: 0 auto 12px auto !important;
+                object-fit: cover !important;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
+                display: block !important;
             " />
-            <h3 style="color: #ffffff !important; margin: 0 0 4px 0; font-size: 18px !important; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">{officer_name}</h3>
-            <p style="color: #93c5fd !important; margin: 0 0 4px 0; font-size: 14px !important; font-weight: 700;">{designation}</p>
-            <p style="color: #e2e8f0 !important; margin: 0 0 12px 0; font-size: 13px !important; font-weight: 500;">{office_name}</p>
+            <h3 style="color: #ffffff !important; margin: 0 0 4px 0 !important; font-size: 18px !important; font-weight: 800 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.5) !important;">{officer_name}</h3>
+            <p style="color: #93c5fd !important; margin: 0 0 4px 0 !important; font-size: 14px !important; font-weight: 700 !important;">{designation}</p>
+            <p style="color: #e2e8f0 !important; margin: 0 0 12px 0 !important; font-size: 13px !important; font-weight: 500 !important;">{office_name}</p>
             <div style="
-                background: rgba(255, 255, 255, 0.15);
-                backdrop-filter: blur(4px);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                padding: 8px 12px;
-                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.15) !important;
+                backdrop-filter: blur(4px) !important;
+                border: 1px solid rgba(255, 255, 255, 0.25) !important;
+                padding: 8px 12px !important;
+                border-radius: 8px !important;
                 font-size: 12px !important;
-                color: #ffffff !important;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
             ">
-                <span style="color: #ffffff !important; font-weight: 600;"><b style="color: #93c5fd !important;">EPF No:</b> {epf_number}</span>
-                <span style="color: #ffffff !important; font-weight: 600;"><b style="color: #93c5fd !important;">Code:</b> {current_code}</span>
+                <span style="color: #ffffff !important; font-weight: 600 !important;"><b style="color: #93c5fd !important;">EPF No:</b> {epf_number}</span>
+                <span style="color: #ffffff !important; font-weight: 600 !important;"><b style="color: #93c5fd !important;">Code:</b> {current_code}</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
