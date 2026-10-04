@@ -56,10 +56,10 @@ st.markdown("""
         }
         .sidebar-profile-card h3 {
             color: #ffffff !important;
-            margin: 0 0 4px 0 !important;
-            font-size: 18px !important;
+            margin: 10px 0 4px 0 !important;
+            font-size: 19px !important;
             font-weight: 800 !important;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.5) !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
         }
         .sidebar-profile-card .desig-text {
             color: #93c5fd !important;
@@ -74,14 +74,18 @@ st.markdown("""
             font-weight: 500 !important;
         }
         .sidebar-profile-card .info-badge {
-            background: rgba(255, 255, 255, 0.15) !important;
+            background: rgba(255, 255, 255, 0.12) !important;
             border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            padding: 8px 12px !important;
+            padding: 10px 12px !important;
             border-radius: 8px !important;
-            font-size: 12px !important;
+            font-size: 12.5px !important;
             display: flex !important;
             justify-content: space-between !important;
             align-items: center !important;
+            color: #ffffff !important;
+        }
+        .sidebar-profile-card .info-badge span,
+        .sidebar-profile-card .info-badge b {
             color: #ffffff !important;
         }
 
@@ -616,7 +620,7 @@ else:
     if not str(photo_url).strip():
         photo_url = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"  # Default Executive Avatar
 
-    # Render Executive Profile Card in Sidebar with Dark Background & High Contrast White Text
+    # Render Executive Profile Card in Sidebar with Guaranteed Light Text Visibility
     st.sidebar.markdown(f"""
         <div class="sidebar-profile-card">
             <img src="{photo_url}" style="
@@ -629,12 +633,12 @@ else:
                 box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
                 display: block !important;
             " />
-            <h3>{officer_name}</h3>
-            <p class="desig-text">{designation}</p>
-            <p class="office-text">{office_name}</p>
-            <div class="info-badge">
-                <span><b style="color: #93c5fd;">EPF No:</b> {epf_number}</span>
-                <span><b style="color: #93c5fd;">Code:</b> {current_code}</span>
+            <h3 style="color: #ffffff !important;">{officer_name}</h3>
+            <p class="desig-text" style="color: #93c5fd !important;">{designation}</p>
+            <p class="office-text" style="color: #e2e8f0 !important;">{office_name}</p>
+            <div class="info-badge" style="color: #ffffff !important;">
+                <span style="color: #ffffff !important;"><b style="color: #93c5fd !important;">EPF No:</b> {epf_number}</span>
+                <span style="color: #ffffff !important;"><b style="color: #93c5fd !important;">Code:</b> {current_code}</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -694,7 +698,7 @@ else:
                 st.caption("📎 No supporting file attached by submitting office.")
 
         with col_d2:
-            st.markdown('<div class="dossier-label">⚖️ District Action Taken Report (ATR Directives):</div>', unsafe_allow_html=True)
+            st.markdown('<div class="dossier-label">⚖️️ District Action Taken Report (ATR Directives):</div>', unsafe_allow_html=True)
             atr_text = row_data.get('District Action/Opinion', '')
             if not str(atr_text).strip():
                 atr_text = "Pending evaluation at District Administration Level. Action Taken Report (ATR) will be published post audit."
