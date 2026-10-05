@@ -39,9 +39,21 @@ st.markdown("""
             font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
         }
 
-        /* Sidebar Styling Fixes */
+        /* Sidebar Base Styling */
         [data-testid="stSidebar"] {
             background-color: #f1f5f9 !important;
+        }
+
+        /* FIX 2: GLOBAL CSS INJECTION FOR SIDEBAR PROFILE TEXT */
+        [data-testid="stSidebar"] .sidebar-profile-card h1,
+        [data-testid="stSidebar"] .sidebar-profile-card h2,
+        [data-testid="stSidebar"] .sidebar-profile-card h3,
+        [data-testid="stSidebar"] .sidebar-profile-card p,
+        [data-testid="stSidebar"] .sidebar-profile-card span,
+        [data-testid="stSidebar"] .sidebar-profile-card b,
+        [data-testid="stSidebar"] .sidebar-profile-card div {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
 
         /* Profile Card Specific High Contrast Styling */
@@ -56,6 +68,7 @@ st.markdown("""
         }
         .sidebar-profile-card h3 {
             color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
             margin: 10px 0 4px 0 !important;
             font-size: 19px !important;
             font-weight: 800 !important;
@@ -63,12 +76,14 @@ st.markdown("""
         }
         .sidebar-profile-card .desig-text {
             color: #93c5fd !important;
+            -webkit-text-fill-color: #93c5fd !important;
             margin: 0 0 4px 0 !important;
             font-size: 14px !important;
             font-weight: 700 !important;
         }
         .sidebar-profile-card .office-text {
             color: #e2e8f0 !important;
+            -webkit-text-fill-color: #e2e8f0 !important;
             margin: 0 0 12px 0 !important;
             font-size: 13px !important;
             font-weight: 500 !important;
@@ -87,6 +102,7 @@ st.markdown("""
         .sidebar-profile-card .info-badge span,
         .sidebar-profile-card .info-badge b {
             color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
 
         /* Enlarge body text & markdown */
@@ -132,7 +148,7 @@ st.markdown("""
         h3 { font-size: 21px !important; font-weight: 700 !important; color: #1e3a8a !important; }
         h4 { font-size: 18px !important; font-weight: 600 !important; color: #334155 !important; }
 
-        /* Tabs font size, inactive appearance and active tab indicator */
+        /* Tabs styling */
         .stTabs [data-baseweb="tab-list"] {
             gap: 10px !important;
             background-color: #ffffff !important;
@@ -442,10 +458,6 @@ def process_and_compress_file(uploaded_file):
 
 # FILE UPLOAD LOGIC (SUPABASE STORAGE)
 def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
-    """
-    Uploads a file directly to Supabase Storage Bucket 'complaint-documents'
-    and returns its Public URL.
-    """
     if uploaded_file is None or supabase is None:
         return ""
     try:
@@ -454,14 +466,12 @@ def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
         file_name = f"{file_prefix}_{int(datetime.now().timestamp())}.{ext}"
         bucket_name = "complaint-documents"
         
-        # Upload file to Supabase storage bucket
         supabase.storage.from_(bucket_name).upload(
             file_name,
             file_bytes,
             file_options={"content-type": file_type, "x-upsert": "true"}
         )
         
-        # Fetch public URL
         public_url = supabase.storage.from_(bucket_name).get_public_url(file_name)
         return public_url
     except Exception as e:
@@ -484,7 +494,6 @@ def standardize_status(status_str, remarks, res_date):
     return s
 
 def load_data():
-    """Fetches real-time complaint records directly from Supabase Database."""
     if supabase is None:
         return pd.DataFrame()
     try:
@@ -499,7 +508,6 @@ def load_data():
         
         df = pd.DataFrame(data)
         
-        # Map Supabase database columns to UI Expected Capitalized Names
         col_mapping = {
             'date': 'Date',
             'jurisdiction': 'Jurisdiction',
@@ -618,11 +626,11 @@ else:
         photo_url = ""
 
     if not str(photo_url).strip():
-        photo_url = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"  # Default Executive Avatar
+        photo_url = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
 
-    # Render Executive Profile Card in Sidebar with Guaranteed Light Text Visibility
+    # FIX 1: INLINE HTML FIX WITH EXPLICIT WHITE COLOR INJECTION
     st.sidebar.markdown(f"""
-        <div class="sidebar-profile-card">
+        <div class="sidebar-profile-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%) !important;">
             <img src="{photo_url}" style="
                 width: 100px !important;
                 height: 100px !important;
@@ -633,12 +641,12 @@ else:
                 box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
                 display: block !important;
             " />
-            <h3 style="color: #ffffff !important;">{officer_name}</h3>
-            <p class="desig-text" style="color: #93c5fd !important;">{designation}</p>
-            <p class="office-text" style="color: #e2e8f0 !important;">{office_name}</p>
+            <h3 style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; font-weight: 800 !important; margin-bottom: 4px !important;">{officer_name}</h3>
+            <p class="desig-text" style="color: #93c5fd !important; -webkit-text-fill-color: #93c5fd !important; font-weight: 700 !important;">{designation}</p>
+            <p class="office-text" style="color: #e2e8f0 !important; -webkit-text-fill-color: #e2e8f0 !important;">{office_name}</p>
             <div class="info-badge" style="color: #ffffff !important;">
-                <span style="color: #ffffff !important;"><b style="color: #93c5fd !important;">EPF No:</b> {epf_number}</span>
-                <span style="color: #ffffff !important;"><b style="color: #93c5fd !important;">Code:</b> {current_code}</span>
+                <span style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;"><b style="color: #93c5fd !important; -webkit-text-fill-color: #93c5fd !important;">EPF No:</b> {epf_number}</span>
+                <span style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;"><b style="color: #93c5fd !important; -webkit-text-fill-color: #93c5fd !important;">Code:</b> {current_code}</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -698,7 +706,7 @@ else:
                 st.caption("📎 No supporting file attached by submitting office.")
 
         with col_d2:
-            st.markdown('<div class="dossier-label">⚖️️ District Action Taken Report (ATR Directives):</div>', unsafe_allow_html=True)
+            st.markdown('<div class="dossier-label">⚖ District Action Taken Report (ATR Directives):</div>', unsafe_allow_html=True)
             atr_text = row_data.get('District Action/Opinion', '')
             if not str(atr_text).strip():
                 atr_text = "Pending evaluation at District Administration Level. Action Taken Report (ATR) will be published post audit."
@@ -1007,7 +1015,7 @@ else:
                 
                 render_dossier_card(case_row, is_district=True)
                 
-                st.markdown("#### ✍️ Enter Official District ATR Directive")
+                st.markdown("#### ✍️️ Enter Official District ATR Directive")
                 with st.form(key="hq_atr_form"):
                     current_stat = case_row.get('Normalized_Status', 'Pending')
                     status_options = ["Pending", "In Progress", "Disposed"]
