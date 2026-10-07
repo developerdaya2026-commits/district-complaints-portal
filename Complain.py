@@ -226,7 +226,7 @@ st.markdown("""
             display: none !important;
         }
 
-        /* Buttons Styling */
+        /* General Buttons Styling */
         .stButton > button {
             font-size: 16px !important;
             font-weight: 700 !important;
@@ -234,16 +234,61 @@ st.markdown("""
             border-radius: 8px !important;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             transition: all 0.2s ease-in-out !important;
+            background-color: #ffffff !important;
+            color: #1e3a8a !important;
+            border: 1px solid #cbd5e1 !important;
         }
         .stButton > button:hover {
             transform: translateY(-1px);
             box-shadow: 0 6px 10px -1px rgba(0, 0, 0, 0.15);
+            background-color: #1e3a8a !important;
+            color: #ffffff !important;
         }
 
-        /* Input Controls and Select boxes */
-        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
+        /* FIX 1: INPUT CONTROLS & SELECT BOXES HIGH CONTRAST */
+        .stTextInput input, 
+        .stTextArea textarea, 
+        div[data-baseweb="input"] input,
+        .stTextInput div[data-baseweb="input"] {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
             font-size: 15.5px !important;
             border-radius: 8px !important;
+            border: 1px solid #cbd5e1 !important;
+        }
+
+        .stSelectbox div[data-baseweb="select"] {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border-radius: 8px !important;
+            border: 1px solid #cbd5e1 !important;
+        }
+        .stSelectbox div[data-baseweb="select"] * {
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+        }
+
+        /* FIX 2: SIDEBAR BUTTONS HIGH VISIBILITY */
+        [data-testid="stSidebar"] .stButton > button {
+            background-color: #ffffff !important;
+            color: #1e3a8a !important;
+            border: 1px solid #94a3b8 !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stSidebar"] .stButton > button * {
+            color: #1e3a8a !important;
+            -webkit-text-fill-color: #1e3a8a !important;
+        }
+        [data-testid="stSidebar"] .stButton > button:hover {
+            background-color: #1e3a8a !important;
+            color: #ffffff !important;
+            border-color: #1e3a8a !important;
+        }
+        [data-testid="stSidebar"] .stButton > button:hover * {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
 
         /* Login Box Wrapper */
