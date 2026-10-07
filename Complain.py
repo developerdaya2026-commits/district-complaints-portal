@@ -44,7 +44,7 @@ st.markdown("""
             background-color: #f1f5f9 !important;
         }
 
-        /* FIX 2: GLOBAL CSS INJECTION FOR SIDEBAR PROFILE TEXT */
+        /* GLOBAL CSS INJECTION FOR SIDEBAR PROFILE TEXT */
         [data-testid="stSidebar"] .sidebar-profile-card h1,
         [data-testid="stSidebar"] .sidebar-profile-card h2,
         [data-testid="stSidebar"] .sidebar-profile-card h3,
@@ -617,7 +617,7 @@ else:
         office_name = profile_data.get("office_name") or assigned_office
         designation = profile_data.get("designation") or "Desk Representative"
         epf_number = profile_data.get("epf_no") or "N/A"
-        photo_url = profile_data.get("photo_url") or ""
+        photo_url = str(profile_data.get("photo_url") or "").strip()
     else:
         officer_name = "Authorized Officer"
         office_name = assigned_office
@@ -625,22 +625,25 @@ else:
         epf_number = "N/A"
         photo_url = ""
 
-    if not str(photo_url).strip():
-        photo_url = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+    default_avatar = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+    if not photo_url or not photo_url.startswith("http"):
+        photo_url = default_avatar
 
-    # FIX 1: INLINE HTML FIX WITH EXPLICIT WHITE COLOR INJECTION
+    # INLINE HTML WITH AUTO-FALLBACK FOR BROKEN/MISSING IMAGES
     st.sidebar.markdown(f"""
         <div class="sidebar-profile-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%) !important;">
-            <img src="{photo_url}" style="
-                width: 100px !important;
-                height: 100px !important;
-                border-radius: 50% !important;
-                border: 3px solid #60a5fa !important;
-                margin: 0 auto 12px auto !important;
-                object-fit: cover !important;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
-                display: block !important;
-            " />
+            <img src="{photo_url}" 
+                 onerror="this.onerror=null; this.src='{default_avatar}';"
+                 style="
+                    width: 100px !important;
+                    height: 100px !important;
+                    border-radius: 50% !important;
+                    border: 3px solid #60a5fa !important;
+                    margin: 0 auto 12px auto !important;
+                    object-fit: cover !important;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
+                    display: block !important;
+                 " />
             <h3 style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; font-weight: 800 !important; margin-bottom: 4px !important;">{officer_name}</h3>
             <p class="desig-text" style="color: #93c5fd !important; -webkit-text-fill-color: #93c5fd !important; font-weight: 700 !important;">{designation}</p>
             <p class="office-text" style="color: #e2e8f0 !important; -webkit-text-fill-color: #e2e8f0 !important;">{office_name}</p>
@@ -1015,7 +1018,7 @@ else:
                 
                 render_dossier_card(case_row, is_district=True)
                 
-                st.markdown("#### ✍️️ Enter Official District ATR Directive")
+                st.markdown("#### ✍ Enter Official District ATR Directive")
                 with st.form(key="hq_atr_form"):
                     current_stat = case_row.get('Normalized_Status', 'Pending')
                     status_options = ["Pending", "In Progress", "Disposed"]
