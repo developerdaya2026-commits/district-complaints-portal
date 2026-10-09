@@ -245,7 +245,7 @@ st.markdown("""
             color: #ffffff !important;
         }
 
-        /* FIX 1: INPUT CONTROLS & SELECT BOXES HIGH CONTRAST */
+        /* INPUT CONTROLS & SELECT BOXES HIGH CONTRAST */
         .stTextInput input, 
         .stTextArea textarea, 
         div[data-baseweb="input"] input,
@@ -269,7 +269,7 @@ st.markdown("""
             -webkit-text-fill-color: #0f172a !important;
         }
 
-        /* FIX 2: SIDEBAR BUTTONS HIGH VISIBILITY */
+        /* SIDEBAR BUTTONS HIGH VISIBILITY */
         [data-testid="stSidebar"] .stButton > button {
             background-color: #ffffff !important;
             color: #1e3a8a !important;
@@ -469,6 +469,31 @@ def get_user_profile(user_code):
     except Exception:
         pass
     return None
+
+# ATTENDANCE DATABASE HELPERS
+def upload_attendance_record(payload):
+    """Upserts monthly attendance record for an employee."""
+    if supabase is None:
+        return False
+    try:
+        supabase.table("monthly_attendance").upsert(payload, on_conflict="month,year,office_code,employee_name").execute()
+        return True
+    except Exception as e:
+        st.error(f"Failed to submit attendance: {e}")
+        return False
+
+def load_monthly_attendance(month, year):
+    """Fetches attendance records for all offices for a specific month/year."""
+    if supabase is None:
+        return pd.DataFrame()
+    try:
+        res = supabase.table("monthly_attendance").select("*").eq("month", month).eq("year", year).execute()
+        if res.data:
+            return pd.DataFrame(res.data)
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error fetching attendance data: {e}")
+        return pd.DataFrame()
 
 # AUTO-COMPRESSION FOR CRISP A4 PRINT-READY RESOLUTION
 def process_and_compress_file(uploaded_file):
@@ -774,7 +799,11 @@ else:
     if current_role == "Block":
         st.markdown(f"### 📝 Welcome, Authorized Desk - {assigned_office}")
         
-        tab_new, tab_report = st.tabs(["🆕 File New Grievance", "📊 My Office Performance Reports (ATR)"])
+        tab_new, tab_report, tab_att = st.tabs([
+            "🆕 File New Grievance", 
+            "📊 My Office Performance Reports (ATR)",
+            "📅 Monthly Attendance Submission"
+        ])
         
         with tab_new:
             with st.form(key="block_grievance_form", clear_on_submit=True):
@@ -891,17 +920,100 @@ else:
             else:
                 st.info("No records to display.")
 
+        # TAB 3: BLOCK MONTHLY ATTENDANCE ENTRY
+        with tab_att:
+            st.subheader(f"📑 Monthly Employee Attendance Entry - {assigned_office}")
+            
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                selected_month = st.selectbox("Select Month", range(1, 13), index=datetime.now().month - 1)
+            with col_m2:
+                selected_year = st.number_input("Select Year", min_value=2024, max_value=2030, value=datetime.now().year)
+
+            # Fetch employees linked to this office code from user_profiles table
+            office_emp_df = pd.DataFrame()
+            try:
+                emp_res = supabase.table("user_profiles").select("*").eq("office_name", assigned_office).execute()
+                if emp_res.data:
+                    office_emp_df = pd.DataFrame(emp_res.data)
+            except Exception:
+                pass
+
+            if office_emp_df.empty:
+                st.warning("⚠️ No registered employees found for this office in user_profiles. Please add employee records first.")
+            else:
+                st.info(f"👥 Found {len(office_emp_df)} employee(s) registered under {assigned_office}.")
+                
+                with st.form("attendance_submission_form"):
+                    st.markdown("#### Staff Attendance Ledger")
+                    for idx, emp_row in office_emp_df.iterrows():
+                        e_name = emp_row.get("officer_name", f"Employee {idx+1}")
+                        e_desig = emp_row.get("designation", "Staff")
+                        
+                        st.markdown(f"**👤 {e_name}** (`{e_desig}`)")
+                        c1, c2, c3, c4 = st.columns([2, 2, 2, 3])
+                        with c1:
+                            status = st.selectbox(f"Status", ["Present", "Absent", "Leave / CL", "Partial Absent"], key=f"att_stat_{idx}")
+                        with c2:
+                            working_days = st.number_input("Working Days", min_value=1, max_value=31, value=30, key=f"att_work_{idx}")
+                        with c3:
+                            absent_days = st.number_input("Absent Days", min_value=0, max_value=31, value=0 if status == "Present" else 1, key=f"att_abs_{idx}")
+                        with c4:
+                            remarks = st.text_input("Remarks / Leave Reason", placeholder="Optional remarks", key=f"att_rem_{idx}")
+                        st.markdown("---")
+
+                    doc_file = st.file_uploader("📎 Attach Signed Attendance Sheet / Absentee Statement (PDF/JPG)", type=["pdf", "jpg", "png"])
+                    
+                    if st.form_submit_button("🚀 Submit Monthly Attendance to HQ", use_container_width=True):
+                        with st.spinner("Processing attendance transmission..."):
+                            public_doc_url = ""
+                            if doc_file:
+                                public_doc_url = upload_file_to_supabase(doc_file, file_prefix=f"ATT_{current_code}_{selected_month}_{selected_year}")
+
+                            success_count = 0
+                            for idx, emp_row in office_emp_df.iterrows():
+                                e_name = emp_row.get("officer_name", f"Employee {idx+1}")
+                                e_desig = emp_row.get("designation", "Staff")
+                                
+                                status = st.session_state.get(f"att_stat_{idx}", "Present")
+                                w_days = st.session_state.get(f"att_work_{idx}", 30)
+                                a_days = st.session_state.get(f"att_abs_{idx}", 0)
+                                rem = st.session_state.get(f"att_rem_{idx}", "")
+
+                                payload = {
+                                    "month": selected_month,
+                                    "year": selected_year,
+                                    "office_code": current_code,
+                                    "office_name": assigned_office,
+                                    "employee_name": e_name,
+                                    "designation": e_desig,
+                                    "attendance_status": status,
+                                    "total_working_days": w_days,
+                                    "days_present": w_days - a_days,
+                                    "days_absent": a_days,
+                                    "remarks": rem,
+                                    "supporting_doc_url": public_doc_url,
+                                    "submitted_by": current_code
+                                }
+                                if upload_attendance_record(payload):
+                                    success_count += 1
+
+                            if success_count > 0:
+                                st.success(f"✅ Attendance for {success_count} employee(s) successfully transmitted for Month {selected_month}/{selected_year}!")
+                                st.balloons()
+
     # ------------------------------------------
     # ROLE B: DISTRICT MONITORING DASHBOARD (DM LEVEL)
     # ------------------------------------------
     else:
         st.markdown("### 📊 Command Control Centre & Analytical Panel")
         
-        adm_tab1, adm_tab2, adm_tab3, adm_tab4 = st.tabs([
+        adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5 = st.tabs([
             "🔍 Live Grievance Explorer", 
             "📈 Operational Matrix & ATR Charts", 
             "⚙️ Action Taken Cell (ATR)", 
-            "🛡️ Security Desk (Credential Control)"
+            "🛡️ Security Desk (Credential Control)",
+            "📑 Attendance & Payroll Portal"
         ])
         
         with adm_tab1:
@@ -1113,6 +1225,101 @@ else:
             if st.button("Reset Selected Office Password to Default (Nawada@123)", use_container_width=True):
                 st.session_state["password_db"][target_user] = "Nawada@123"
                 st.success(f"🔐 Password for office code **{target_user}** successfully reset to `Nawada@123`.")
+
+        # TAB 5: DISTRICT ATTENDANCE AUDIT & PAYROLL CELL
+        with adm_tab5:
+            st.subheader("🏢 District Monthly Attendance Audit & Payroll Processing Cell")
+            
+            ctrl_c1, ctrl_c2, ctrl_c3 = st.columns([2, 2, 3])
+            with ctrl_c1:
+                audit_month = st.selectbox("Audit Month", range(1, 13), index=datetime.now().month - 1, key="adm_audit_m")
+            with ctrl_c2:
+                audit_year = st.number_input("Audit Year", min_value=2024, max_value=2030, value=datetime.now().year, key="adm_audit_y")
+            
+            # Load all user profiles to map total offices & employees
+            all_profiles_df = pd.DataFrame()
+            try:
+                prof_res = supabase.table("user_profiles").select("*").execute()
+                if prof_res.data:
+                    all_profiles_df = pd.DataFrame(prof_res.data)
+            except Exception:
+                pass
+
+            att_df = load_monthly_attendance(audit_month, audit_year)
+
+            # REPORT METRICS
+            st.markdown("---")
+            st.markdown("### 📊 Office Submission Compliance Report")
+
+            all_registered_offices = set(USER_REGISTRY.keys())
+            submitted_offices = set(att_df["office_code"].unique()) if not att_df.empty else set()
+            pending_offices = all_registered_offices - submitted_offices
+
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f'<div class="metric-card"><div class="metric-title">Total Registered Nodes</div><div class="metric-value">{len(all_registered_offices)}</div></div>', unsafe_allow_html=True)
+            with m2:
+                st.markdown(f'<div class="metric-card disposed"><div class="metric-title">Attendance Uploaded</div><div class="metric-value" style="color: #10b981;">{len(submitted_offices)}</div></div>', unsafe_allow_html=True)
+            with m3:
+                st.markdown(f'<div class="metric-card pending"><div class="metric-title">Rest to Upload (Pending)</div><div class="metric-value" style="color: #ef4444;">{len(pending_offices)}</div></div>', unsafe_allow_html=True)
+            with m4:
+                total_staff_count = len(all_profiles_df) if not all_profiles_df.empty else 0
+                st.markdown(f'<div class="metric-card"><div class="metric-title">Total Staff Mapped</div><div class="metric-value" style="color: #1e3a8a;">{total_staff_count}</div></div>', unsafe_allow_html=True)
+
+            # SUBMISSION BREAKDOWN DETAILS
+            rep_col1, rep_col2 = st.columns(2)
+            with rep_col1:
+                st.markdown("#### ✅ Submitted Offices & Employee Count")
+                if not att_df.empty:
+                    summary_sub = att_df.groupby(["office_name", "office_code"]).agg(
+                        Employees_Submitted=('employee_name', 'count'),
+                        Total_Absents=('days_absent', 'sum')
+                    ).reset_index()
+                    st.dataframe(summary_sub, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No attendance uploaded yet for this month.")
+
+            with rep_col2:
+                st.markdown("#### ⏳ Rest to Upload (Pending Offices List)")
+                if pending_offices:
+                    pending_list = []
+                    for p_code in pending_offices:
+                        o_info = USER_REGISTRY.get(p_code, {})
+                        e_count = len(all_profiles_df[all_profiles_df["user_code"] == p_code]) if not all_profiles_df.empty else "N/A"
+                        pending_list.append({
+                            "Office Code": p_code,
+                            "Office Name": o_info.get("name", "N/A"),
+                            "Mapped Employees": e_count,
+                            "Status": "Pending Upload"
+                        })
+                    st.dataframe(pd.DataFrame(pending_list), use_container_width=True, hide_index=True)
+                else:
+                    st.success("🎉 All offices have successfully uploaded their monthly attendance!")
+
+            # DOWNLOAD AND PAYROLL DATASET EXPORT
+            st.markdown("---")
+            st.markdown("### 📥 Download Payroll & Absentee Dataset")
+            if not att_df.empty:
+                csv_buffer = att_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label=f"⬇️ Download Month {audit_month}/{audit_year} Full Attendance Sheet (CSV)",
+                    data=csv_buffer,
+                    file_name=f"District_Attendance_Payroll_{audit_month}_{audit_year}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+                
+                st.markdown("#### 📋 Detailed Employee Attendance Ledger")
+                st.dataframe(
+                    att_df[["office_name", "employee_name", "designation", "attendance_status", "days_present", "days_absent", "remarks", "supporting_doc_url"]],
+                    column_config={
+                        "supporting_doc_url": st.column_config.LinkColumn("📎 Signed Document", display_text="View PDF/Sheet")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.warning("No data available to download for the selected month/year.")
 
 # Corporate Footer
 st.markdown("""
