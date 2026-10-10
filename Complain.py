@@ -269,6 +269,44 @@ st.markdown("""
             -webkit-text-fill-color: #0f172a !important;
         }
 
+        /* FIX DROPDOWN POPUP MENU & OPTIONS TEXT COLOR */
+        div[data-baseweb="menu"] {
+            background-color: #ffffff !important;
+            border: 1px solid #cbd5e1 !important;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1) !important;
+        }
+        div[data-baseweb="menu"] * {
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+        }
+        li[role="option"] {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+        }
+        li[role="option"]:hover, 
+        li[role="option"][aria-selected="true"],
+        div[aria-selected="true"] {
+            background-color: #1e3a8a !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
+        /* FIX DATAFRAME TEXT CLARITY & CONTRAST */
+        .stDataFrame, [data-testid="stDataFrame"], .dataframe th, .dataframe td {
+            color: #0f172a !important;
+            font-size: 15px !important;
+        }
+        [data-testid="stDataFrame"] div, 
+        [data-testid="stDataFrame"] span, 
+        [data-testid="stDataFrame"] p,
+        [data-testid="stDataFrame"] td,
+        [data-testid="stDataFrame"] th {
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            font-weight: 500 !important;
+        }
+
         /* SIDEBAR BUTTONS HIGH VISIBILITY */
         [data-testid="stSidebar"] .stButton > button {
             background-color: #ffffff !important;
@@ -1315,7 +1353,7 @@ else:
                     column_config={
                         "supporting_doc_url": st.column_config.LinkColumn("📎 Signed Document", display_text="View PDF/Sheet")
                     },
-                    use_container_width=True,
+                    use_count_width=True,
                     hide_index=True
                 )
             else:
