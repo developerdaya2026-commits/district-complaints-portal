@@ -258,36 +258,47 @@ st.markdown("""
             border: 1px solid #cbd5e1 !important;
         }
 
+        /* FIX SELECTBOX FIELD & TEXT READABILITY */
         .stSelectbox div[data-baseweb="select"] {
             background-color: #ffffff !important;
             color: #0f172a !important;
             border-radius: 8px !important;
             border: 1px solid #cbd5e1 !important;
         }
-        .stSelectbox div[data-baseweb="select"] * {
+        .stSelectbox div[data-baseweb="select"] *,
+        .stSelectbox span,
+        .stSelectbox div {
             color: #0f172a !important;
             -webkit-text-fill-color: #0f172a !important;
+            background-color: transparent !important;
         }
 
         /* FIX DROPDOWN POPUP MENU & OPTIONS TEXT COLOR */
-        div[data-baseweb="menu"] {
+        div[data-baseweb="menu"], ul[role="listbox"] {
             background-color: #ffffff !important;
             border: 1px solid #cbd5e1 !important;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1) !important;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15) !important;
         }
-        div[data-baseweb="menu"] * {
+        div[data-baseweb="menu"] *, ul[role="listbox"] * {
             color: #0f172a !important;
             -webkit-text-fill-color: #0f172a !important;
+            background-color: transparent !important;
         }
         li[role="option"] {
             background-color: #ffffff !important;
             color: #0f172a !important;
             -webkit-text-fill-color: #0f172a !important;
+            padding: 10px 14px !important;
         }
         li[role="option"]:hover, 
         li[role="option"][aria-selected="true"],
-        div[aria-selected="true"] {
+        div[role="option"][aria-selected="true"] {
             background-color: #1e3a8a !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+        li[role="option"]:hover *, 
+        li[role="option"][aria-selected="true"] * {
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
         }
@@ -1353,7 +1364,7 @@ else:
                     column_config={
                         "supporting_doc_url": st.column_config.LinkColumn("📎 Signed Document", display_text="View PDF/Sheet")
                     },
-                    use_count_width=True,
+                    use_container_width=True,
                     hide_index=True
                 )
             else:
