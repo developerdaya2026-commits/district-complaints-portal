@@ -303,19 +303,39 @@ st.markdown("""
             -webkit-text-fill-color: #ffffff !important;
         }
 
-        /* FIX DATAFRAME TEXT CLARITY & CONTRAST */
-        .stDataFrame, [data-testid="stDataFrame"], .dataframe th, .dataframe td {
-            color: #0f172a !important;
-            font-size: 15px !important;
+        /* FIX DATAFRAME / GRID VIEW TEXT & BACKGROUND CLARITY */
+        .stDataFrame, [data-testid="stDataFrame"] {
+            background-color: #ffffff !important;
+            border-radius: 8px !important;
+            border: 1px solid #cbd5e1 !important;
+            padding: 4px !important;
         }
+        
+        /* Table Headers (Column Names) */
+        [data-testid="stDataFrame"] th, 
+        [data-testid="stDataFrame"] table th,
+        .dataframe th {
+            background-color: #1e3a8a !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            font-size: 15px !important;
+            font-weight: 700 !important;
+            text-align: left !important;
+            padding: 10px !important;
+        }
+
+        /* Table Cells (Row Data Text) */
+        [data-testid="stDataFrame"] td, 
+        [data-testid="stDataFrame"] table td,
+        .dataframe td,
         [data-testid="stDataFrame"] div, 
         [data-testid="stDataFrame"] span, 
-        [data-testid="stDataFrame"] p,
-        [data-testid="stDataFrame"] td,
-        [data-testid="stDataFrame"] th {
+        [data-testid="stDataFrame"] p {
             color: #0f172a !important;
             -webkit-text-fill-color: #0f172a !important;
+            font-size: 14.5px !important;
             font-weight: 500 !important;
+            background-color: transparent !important;
         }
 
         /* SIDEBAR BUTTONS HIGH VISIBILITY */
