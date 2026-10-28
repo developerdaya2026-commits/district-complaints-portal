@@ -595,13 +595,59 @@ def process_and_compress_file(uploaded_file):
     final_kb = len(file_bytes) // 1024
     return file_bytes, file_type, orig_kb, final_kb
 
-# FILE UPLOAD LOGIC (SUPABASE STORAGE)
+# SECURE STORAGE URL & SIGNED URL RESOLVER
+def get_secure_file_url(stored_val, bucket_name="complaint-documents"):
+    if not stored_val or not isinstance(stored_val, str):
+        return ""
+    val = stored_val.strip()
+    
+    # Extract filename correctly
+    file_path = val
+    if "/" in val:
+        file_path = val.split("/")[-1].split("?")[0]
+        
+    try:
+        if supabase and file_path:
+            res = supabase.storage.from_(bucket_name).create_signed_url(file_path, 7200)
+            if isinstance(res, dict) and 'signedUrl' in res:
+                return res['signedUrl']
+            elif isinstance(res, dict) and 'signedURL' in res:
+                return res['signedURL']
+            elif hasattr(res, 'get') and res.get('signedUrl'):
+                return res.get('signedUrl')
+    except Exception:
+        pass
+    
+    if val.startswith("http://"):
+        return val.replace("http://", "https://", 1)
+    return val
+
+# STREAMLIT DIRECT FILE DOWNLOAD / VIEW BUTTON (DIRECT STREAMING FALLBACK)
+def render_file_action_button(file_url, btn_label="📄 View / Download Attachment", key_id="1", bucket_name="complaint-documents"):
+    if not file_url or not str(file_url).strip():
+        st.caption("📎 No file attached.")
+        return
+
+    # Generate Fresh Signed Link
+    signed_url = get_secure_file_url(file_url, bucket_name=bucket_name)
+    
+    # Render Direct Link Button
+    st.markdown(
+        f'<a href="{signed_url}" target="_blank" style="text-decoration: none;">'
+        f'<button style="background-color: #1e3a8a; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 700; cursor: pointer;">'
+        f'{btn_label}</button></a>',
+        unsafe_allow_html=True
+    )
+
+# CLEAN UPLOAD LOGIC TO PREVENT DUPLICATE FILENAMES
 def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
     if uploaded_file is None or supabase is None:
         return ""
     try:
         file_bytes, file_type, orig_kb, final_kb = process_and_compress_file(uploaded_file)
-        ext = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "bin"
+        ext = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "pdf"
+        
+        # Clean naming: PREFIX_TIMESTAMP.EXT
         file_name = f"{file_prefix}_{int(datetime.now().timestamp())}.{ext}"
         bucket_name = "complaint-documents"
         
@@ -841,11 +887,10 @@ else:
             desc_text = row_data.get('Description', 'No description provided.')
             st.markdown(f'<div class="dossier-content-desc">{desc_text}</div>', unsafe_allow_html=True)
             
-            c_file = str(row_data.get('Uploaded File URL', ''))
-            if c_file.startswith("http"):
-                st.markdown(f'<div style="margin-top: 10px;"><a href="{c_file}" target="_blank" style="text-decoration: none; font-weight: 700; color: #1e3a8a;">📄 🖨️ View / Print Original Complaint Attachment</a></div>', unsafe_allow_html=True)
-            else:
-                st.caption("📎 No supporting file attached by submitting office.")
+            raw_c_file = str(row_data.get('Uploaded File URL', ''))
+            st.markdown('<div style="margin-top: 10px;">', unsafe_allow_html=True)
+            render_file_action_button(raw_c_file, btn_label="📄 View / Print Original Complaint Attachment", key_id=f"cpl_{row_data.get('Complaint ID')}")
+            st.markdown('</div>', unsafe_allow_html=True)
 
         with col_d2:
             st.markdown('<div class="dossier-label">⚖ District Action Taken Report (ATR Directives):</div>', unsafe_allow_html=True)
@@ -856,11 +901,10 @@ else:
             else:
                 st.markdown(f'<div class="dossier-content-atr">✅ {atr_text}</div>', unsafe_allow_html=True)
 
-            atr_file = str(row_data.get('ATR Response File URL', ''))
-            if atr_file.startswith("http"):
-                st.markdown(f'<div style="margin-top: 10px;"><a href="{atr_file}" target="_blank" style="text-decoration: none; font-weight: 700; color: #16a34a;">📄 🖨️ View / Print Official ATR Response Document</a></div>', unsafe_allow_html=True)
-            else:
-                st.caption("📎 No ATR response document uploaded by District.")
+            raw_atr_file = str(row_data.get('ATR Response File URL', ''))
+            st.markdown('<div style="margin-top: 10px;">', unsafe_allow_html=True)
+            render_file_action_button(raw_atr_file, btn_label="📄 View / Print Official ATR Response Document", key_id=f"atr_{row_data.get('Complaint ID')}")
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # ------------------------------------------
     # ROLE A: COMPREHENSIVE BLOCK PORTAL
@@ -950,11 +994,11 @@ else:
                     
                     if 'Uploaded File URL' in display_df.columns:
                         display_df['📎 Complaint File'] = display_df['Uploaded File URL'].apply(
-                            lambda x: x if str(x).startswith("http") else ""
+                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
                         )
                     if 'ATR Response File URL' in display_df.columns:
                         display_df['📎 ATR Response'] = display_df['ATR Response File URL'].apply(
-                            lambda x: x if str(x).startswith("http") else ""
+                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
                         )
 
                     display_cols = [
@@ -1108,10 +1152,10 @@ else:
                     filtered_global = filtered_global[filtered_global['Category'] == filter_cat]
 
                 filtered_global['📎 Complaint File'] = filtered_global['Uploaded File URL'].apply(
-                    lambda x: x if str(x).startswith("http") else ""
+                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
                 )
                 filtered_global['📎 ATR Response'] = filtered_global['ATR Response File URL'].apply(
-                    lambda x: x if str(x).startswith("http") else ""
+                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
                 )
 
                 table_cols = [
@@ -1379,8 +1423,16 @@ else:
                 )
                 
                 st.markdown("#### 📋 Detailed Employee Attendance Ledger")
+                
+                # Sanitize supporting doc URL in attendance df if present
+                display_att_df = att_df.copy()
+                if "supporting_doc_url" in display_att_df.columns:
+                    display_att_df["supporting_doc_url"] = display_att_df["supporting_doc_url"].apply(
+                        lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
+                    )
+
                 st.dataframe(
-                    att_df[["office_name", "employee_name", "designation", "attendance_status", "days_present", "days_absent", "remarks", "supporting_doc_url"]],
+                    display_att_df[["office_name", "employee_name", "designation", "attendance_status", "days_present", "days_absent", "remarks", "supporting_doc_url"]],
                     column_config={
                         "supporting_doc_url": st.column_config.LinkColumn("📎 Signed Document", display_text="View PDF/Sheet")
                     },
