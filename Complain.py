@@ -2,21 +2,33 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import requests
 import base64
 import io
+import calendar
 from PIL import Image
 from supabase import create_client, Client
 
-# 1. Page & Corporate Theme Configuration
+try:
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
+except ImportError:
+    FPDF_AVAILABLE = False
+
+# ============================================================
+# 1. PAGE CONFIGURATION
+# ============================================================
 st.set_page_config(
     page_title="Nawada District Monitoring System",
+    page_icon="🏛️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Initialize Supabase Client
+# ============================================================
+# 2. SUPABASE CLIENT INITIALIZATION
+# ============================================================
 @st.cache_resource
 def init_supabase() -> Client:
     try:
@@ -29,463 +41,713 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# Enhanced Corporate UI Styling
+# Inline SVG default avatar (no CDN dependency - works on ALL networks)
+DEFAULT_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23cbd5e1'/%3E%3Ccircle cx='50' cy='38' r='16' fill='%2364748b'/%3E%3Cellipse cx='50' cy='78' rx='30' ry='22' fill='%2364748b'/%3E%3C/svg%3E"
+
+# ============================================================
+# 3. COMPREHENSIVE CSS — NETWORK-UNIVERSAL (NO EXTERNAL FONTS)
+# ============================================================
 st.markdown("""
-    <style>
-        /* Base typography & App background */
-        .stApp {
-            background-color: #f8fafc;
-            font-size: 16px !important;
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-        }
+<style>
+    /* ── IMPORT NOTHING: System Font Stack Only ── */
+    /* Works on NIC, BSWAN, private LAN, any restricted network */
 
-        /* Sidebar Base Styling */
-        [data-testid="stSidebar"] {
-            background-color: #f1f5f9 !important;
-        }
+    /* ── BASE RESET & TYPOGRAPHY ── */
+    *, *::before, *::after {
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Noto Sans', 'Liberation Sans', Arial, sans-serif !important;
+    }
+    .stApp {
+        background-color: #f0f4f8;
+        font-size: 15px !important;
+    }
 
-        /* GLOBAL CSS INJECTION FOR SIDEBAR PROFILE TEXT */
-        [data-testid="stSidebar"] .sidebar-profile-card h1,
-        [data-testid="stSidebar"] .sidebar-profile-card h2,
-        [data-testid="stSidebar"] .sidebar-profile-card h3,
-        [data-testid="stSidebar"] .sidebar-profile-card p,
-        [data-testid="stSidebar"] .sidebar-profile-card span,
-        [data-testid="stSidebar"] .sidebar-profile-card b,
-        [data-testid="stSidebar"] .sidebar-profile-card div {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-        }
+    /* ── SIDEBAR ── */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] label,
+    [data-testid="stSidebar"] .stMarkdown {
+        color: #e2e8f0 !important;
+    }
 
-        /* Profile Card Specific High Contrast Styling */
-        .sidebar-profile-card {
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%) !important;
-            border-radius: 14px !important;
-            padding: 20px 16px !important;
-            margin-bottom: 20px !important;
-            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.25) !important;
-            text-align: center !important;
-            border: 1px solid #3b82f6 !important;
-        }
-        .sidebar-profile-card h3 {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            margin: 10px 0 4px 0 !important;
-            font-size: 19px !important;
-            font-weight: 800 !important;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
-        }
-        .sidebar-profile-card .desig-text {
-            color: #93c5fd !important;
-            -webkit-text-fill-color: #93c5fd !important;
-            margin: 0 0 4px 0 !important;
-            font-size: 14px !important;
-            font-weight: 700 !important;
-        }
-        .sidebar-profile-card .office-text {
-            color: #e2e8f0 !important;
-            -webkit-text-fill-color: #e2e8f0 !important;
-            margin: 0 0 12px 0 !important;
-            font-size: 13px !important;
-            font-weight: 500 !important;
-        }
-        .sidebar-profile-card .info-badge {
-            background: rgba(255, 255, 255, 0.12) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            padding: 10px 12px !important;
-            border-radius: 8px !important;
-            font-size: 12.5px !important;
-            display: flex !important;
-            justify-content: space-between !important;
-            align-items: center !important;
-            color: #ffffff !important;
-        }
-        .sidebar-profile-card .info-badge span,
-        .sidebar-profile-card .info-badge b {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-        }
+    /* ── SIDEBAR PROFILE CARD ── */
+    .sidebar-profile-card {
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%) !important;
+        border-radius: 16px !important;
+        padding: 24px 18px !important;
+        margin: 0 0 20px 0 !important;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3) !important;
+        text-align: center !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
+    }
+    .sidebar-profile-card * {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    .sidebar-profile-card h3 {
+        margin: 12px 0 4px 0 !important;
+        font-size: 18px !important;
+        font-weight: 800 !important;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.4) !important;
+        letter-spacing: 0.3px !important;
+    }
+    .sidebar-profile-card .desig-text {
+        color: #bfdbfe !important;
+        -webkit-text-fill-color: #bfdbfe !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        margin: 0 0 3px 0 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.8px !important;
+    }
+    .sidebar-profile-card .office-text {
+        color: #e0e7ff !important;
+        -webkit-text-fill-color: #e0e7ff !important;
+        font-size: 12.5px !important;
+        font-weight: 500 !important;
+        margin: 0 0 14px 0 !important;
+    }
+    .sidebar-profile-card .info-badge {
+        background: rgba(255, 255, 255, 0.12) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        padding: 10px 12px !important;
+        border-radius: 10px !important;
+        font-size: 12px !important;
+        display: flex !important;
+        justify-content: space-between !important;
+        gap: 8px !important;
+    }
+    .sidebar-profile-card .info-badge span,
+    .sidebar-profile-card .info-badge b {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    .sidebar-profile-card .info-badge b {
+        color: #93c5fd !important;
+        -webkit-text-fill-color: #93c5fd !important;
+    }
 
-        /* Enlarge body text & markdown */
-        p, span, label, .stMarkdown {
-            font-size: 15.5px !important;
-            color: #1e293b;
-        }
+    /* ── PROFILE AVATAR ── */
+    .profile-avatar {
+        width: 96px !important;
+        height: 96px !important;
+        border-radius: 50% !important;
+        border: 3px solid #93c5fd !important;
+        object-fit: cover !important;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.35) !important;
+        display: block !important;
+        margin: 0 auto 10px auto !important;
+        background-color: #cbd5e1 !important;
+    }
 
-        /* Header Banner Styling */
-        .corporate-header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%) !important;
-            padding: 26px 30px !important;
-            border-radius: 12px !important;
-            color: #ffffff !important;
-            margin-bottom: 25px !important;
-            box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.15) !important;
-            text-align: center !important;
-        }
-        .corporate-header,
-        .corporate-header *,
-        .corporate-header h1,
-        .corporate-header h1 * {
-            color: #ffffff !important;
-        }
-        .corporate-header h1 {
-            color: #ffffff !important;
-            margin: 0 0 8px 0 !important;
-            font-size: 28px !important;
-            font-weight: 800 !important;
-            letter-spacing: 0.8px !important;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4) !important;
-        }
-        .corporate-header p,
-        .corporate-header p * {
-            color: #cbd5e1 !important;
-            margin: 0 !important;
-            font-size: 16px !important;
-            font-weight: 500 !important;
-        }
+    /* ── HEADINGS ── */
+    h1 { font-size: 28px !important; font-weight: 800 !important; color: #0f172a !important; }
+    h2 { font-size: 24px !important; font-weight: 700 !important; color: #0f172a !important; }
+    h3 { font-size: 20px !important; font-weight: 700 !important; color: #1e3a8a !important; }
+    h4 { font-size: 17px !important; font-weight: 600 !important; color: #334155 !important; }
+    p, span, label, .stMarkdown { font-size: 15px !important; color: #1e293b; }
 
-        /* Headings */
-        h2 { font-size: 25px !important; font-weight: 700 !important; color: #0f172a !important; }
-        h3 { font-size: 21px !important; font-weight: 700 !important; color: #1e3a8a !important; }
-        h4 { font-size: 18px !important; font-weight: 600 !important; color: #334155 !important; }
+    /* ── CORPORATE HEADER BANNER ── */
+    .corporate-header {
+        background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%) !important;
+        padding: 28px 32px !important;
+        border-radius: 14px !important;
+        margin-bottom: 24px !important;
+        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2) !important;
+        text-align: center !important;
+        position: relative !important;
+        overflow: hidden !important;
+    }
+    .corporate-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 60%);
+        animation: headerPulse 6s ease-in-out infinite;
+    }
+    @keyframes headerPulse {
+        0%, 100% { transform: scale(1); opacity: 0.5; }
+        50% { transform: scale(1.1); opacity: 1; }
+    }
+    .corporate-header * { position: relative; z-index: 1; }
+    .corporate-header h1, .corporate-header h1 * {
+        color: #ffffff !important;
+        font-size: 26px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.8px !important;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.4) !important;
+        margin: 0 0 6px 0 !important;
+    }
+    .corporate-header p, .corporate-header p * {
+        color: #cbd5e1 !important;
+        font-size: 15px !important;
+        font-weight: 500 !important;
+        margin: 0 !important;
+    }
+    .corporate-header .header-badge {
+        display: inline-block;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 12px !important;
+        color: #93c5fd !important;
+        margin-top: 10px;
+        letter-spacing: 0.5px;
+    }
 
-        /* Tabs styling */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px !important;
-            background-color: #ffffff !important;
-            padding: 8px 10px !important;
-            border-radius: 10px !important;
-            border: 1px solid #e2e8f0 !important;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
-        }
+    /* ── LOGIN PAGE ── */
+    @keyframes loginGradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    .login-wrapper {
+        min-height: 70vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .login-box {
+        max-width: 520px;
+        width: 100%;
+        margin: 0 auto;
+        background: rgba(255, 255, 255, 0.97);
+        backdrop-filter: blur(20px);
+        padding: 44px 40px;
+        border-radius: 20px;
+        box-shadow: 0 25px 60px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(226, 232, 240, 0.8);
+        border: 1px solid #e2e8f0;
+    }
+    .login-seal {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px auto;
+        box-shadow: 0 8px 20px rgba(30, 58, 138, 0.3);
+    }
+    .login-seal span {
+        font-size: 36px !important;
+        color: #ffffff !important;
+    }
+    .login-title {
+        text-align: center;
+        font-size: 22px !important;
+        font-weight: 800 !important;
+        color: #0f172a !important;
+        margin: 0 0 4px 0;
+    }
+    .login-subtitle {
+        text-align: center;
+        font-size: 14px !important;
+        color: #64748b !important;
+        margin: 0 0 28px 0;
+    }
+    .login-security-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 10px;
+        padding: 10px 16px;
+        margin-top: 16px;
+        font-size: 13px !important;
+        color: #166534 !important;
+    }
 
-        /* Inactive Tab Styling */
-        .stTabs [data-baseweb="tab"],
-        .stTabs button[role="tab"] {
-            font-size: 16px !important;
-            font-weight: 600 !important;
-            padding: 10px 20px !important;
-            border-radius: 8px !important;
-            background-color: #f8fafc !important;
-            border: 1px solid #cbd5e1 !important;
-            color: #334155 !important;
-            transition: all 0.2s ease-in-out !important;
-        }
-        .stTabs [data-baseweb="tab"] *,
-        .stTabs [data-baseweb="tab"] p,
-        .stTabs [data-baseweb="tab"] span,
-        .stTabs [data-baseweb="tab"] div,
-        .stTabs button[role="tab"] *,
-        .stTabs button[role="tab"] p,
-        .stTabs button[role="tab"] span,
-        .stTabs button[role="tab"] div {
-            color: #334155 !important;
-            font-size: 16px !important;
-            font-weight: 600 !important;
-        }
-        .stTabs [data-baseweb="tab"]:hover,
-        .stTabs button[role="tab"]:hover {
-            background-color: #e2e8f0 !important;
-            border-color: #94a3b8 !important;
-        }
-        .stTabs [data-baseweb="tab"]:hover *,
-        .stTabs [data-baseweb="tab"]:hover p,
-        .stTabs [data-baseweb="tab"]:hover span,
-        .stTabs button[role="tab"]:hover *,
-        .stTabs button[role="tab"]:hover p,
-        .stTabs button[role="tab"]:hover span {
-            color: #0f172a !important;
-        }
+    /* ── TABS STYLING ── */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px !important;
+        background-color: #ffffff !important;
+        padding: 8px 10px !important;
+        border-radius: 12px !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+        flex-wrap: wrap !important;
+    }
+    .stTabs [data-baseweb="tab"],
+    .stTabs button[role="tab"] {
+        font-size: 14.5px !important;
+        font-weight: 600 !important;
+        padding: 10px 18px !important;
+        border-radius: 8px !important;
+        background-color: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #334155 !important;
+        white-space: nowrap !important;
+        transition: all 0.2s ease !important;
+    }
+    .stTabs [data-baseweb="tab"] *,
+    .stTabs button[role="tab"] * {
+        color: #334155 !important;
+        font-size: 14.5px !important;
+        font-weight: 600 !important;
+    }
+    .stTabs [data-baseweb="tab"]:hover,
+    .stTabs button[role="tab"]:hover {
+        background-color: #e2e8f0 !important;
+        border-color: #94a3b8 !important;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"],
+    .stTabs button[role="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
+        border: 1px solid #1e3a8a !important;
+        box-shadow: 0 4px 10px rgba(30, 58, 138, 0.3) !important;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] *,
+    .stTabs button[role="tab"][aria-selected="true"] * {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+    }
+    .stTabs [data-baseweb="tab-highlight"],
+    .stTabs [data-baseweb="tab-border"] { display: none !important; }
 
-        /* Active Tab Styling */
-        .stTabs [data-baseweb="tab"][aria-selected="true"],
-        .stTabs button[role="tab"][aria-selected="true"] {
-            background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%) !important;
-            border: 1px solid #1e3a8a !important;
-            border-radius: 8px !important;
-            box-shadow: 0 4px 8px -1px rgba(30, 58, 138, 0.35) !important;
-        }
-        .stTabs [data-baseweb="tab"][aria-selected="true"] *,
-        .stTabs [data-baseweb="tab"][aria-selected="true"] p,
-        .stTabs [data-baseweb="tab"][aria-selected="true"] span,
-        .stTabs [data-baseweb="tab"][aria-selected="true"] div,
-        .stTabs button[role="tab"][aria-selected="true"] *,
-        .stTabs button[role="tab"][aria-selected="true"] p,
-        .stTabs button[role="tab"][aria-selected="true"] span,
-        .stTabs button[role="tab"][aria-selected="true"] div {
-            background-color: transparent !important;
-            color: #ffffff !important;
-            fill: #ffffff !important;
-            font-weight: 800 !important;
-            font-size: 16px !important;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
-        }
+    /* ── BUTTONS ── */
+    .stButton > button {
+        font-size: 15px !important;
+        font-weight: 700 !important;
+        padding: 10px 22px !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        transition: all 0.2s ease !important;
+        background-color: #ffffff !important;
+        color: #1e3a8a !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 14px rgba(30, 58, 138, 0.2);
+        background-color: #1e3a8a !important;
+        color: #ffffff !important;
+    }
+    .stButton > button:hover * { color: #ffffff !important; }
 
-        /* Clean Tab Indicators */
-        .stTabs [data-baseweb="tab-highlight"],
-        .stTabs [data-baseweb="tab-border"] {
-            display: none !important;
-        }
+    /* ── SIDEBAR BUTTONS ── */
+    [data-testid="stSidebar"] .stButton > button {
+        background: rgba(255,255,255,0.08) !important;
+        color: #e2e8f0 !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stSidebar"] .stButton > button * {
+        color: #e2e8f0 !important;
+        -webkit-text-fill-color: #e2e8f0 !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: #3b82f6 !important;
+        color: #ffffff !important;
+        border-color: #3b82f6 !important;
+    }
 
-        /* General Buttons Styling */
-        .stButton > button {
-            font-size: 16px !important;
-            font-weight: 700 !important;
-            padding: 10px 24px !important;
-            border-radius: 8px !important;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            transition: all 0.2s ease-in-out !important;
-            background-color: #ffffff !important;
-            color: #1e3a8a !important;
-            border: 1px solid #cbd5e1 !important;
-        }
-        .stButton > button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 10px -1px rgba(0, 0, 0, 0.15);
-            background-color: #1e3a8a !important;
-            color: #ffffff !important;
-        }
+    /* ════════════════════════════════════════════════════════
+       ── CRITICAL FIX: ALL DROPDOWNS / SELECT BOXES ──
+       Works on NIC, BSWAN, any network/browser
+       ════════════════════════════════════════════════════════ */
 
-        /* INPUT CONTROLS & SELECT BOXES HIGH CONTRAST */
-        .stTextInput input, 
-        .stTextArea textarea, 
-        div[data-baseweb="input"] input,
-        .stTextInput div[data-baseweb="input"] {
-            background-color: #ffffff !important;
-            color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
-            font-size: 15.5px !important;
-            border-radius: 8px !important;
-            border: 1px solid #cbd5e1 !important;
-        }
+    /* Input fields */
+    .stTextInput input,
+    .stTextArea textarea,
+    div[data-baseweb="input"] input {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 15px !important;
+        border-radius: 10px !important;
+        border: 1.5px solid #cbd5e1 !important;
+        padding: 10px 14px !important;
+    }
+    .stTextInput input:focus,
+    .stTextArea textarea:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+    }
 
-        /* FIX SELECTBOX FIELD & TEXT READABILITY */
-        .stSelectbox div[data-baseweb="select"] {
-            background-color: #ffffff !important;
-            color: #0f172a !important;
-            border-radius: 8px !important;
-            border: 1px solid #cbd5e1 !important;
-        }
-        .stSelectbox div[data-baseweb="select"] *,
-        .stSelectbox span,
-        .stSelectbox div {
-            color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
-            background-color: transparent !important;
-        }
+    /* Select box control */
+    .stSelectbox div[data-baseweb="select"],
+    .stMultiSelect div[data-baseweb="select"] {
+        background-color: #ffffff !important;
+        border-radius: 10px !important;
+        border: 1.5px solid #cbd5e1 !important;
+        min-height: 42px !important;
+    }
+    .stSelectbox div[data-baseweb="select"]:focus-within,
+    .stMultiSelect div[data-baseweb="select"]:focus-within {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+    }
 
-        /* FIX DROPDOWN POPUP MENU & OPTIONS TEXT COLOR */
-        div[data-baseweb="menu"], ul[role="listbox"] {
-            background-color: #ffffff !important;
-            border: 1px solid #cbd5e1 !important;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.15) !important;
-        }
-        div[data-baseweb="menu"] *, ul[role="listbox"] * {
-            color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
-            background-color: transparent !important;
-        }
-        li[role="option"] {
-            background-color: #ffffff !important;
-            color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
-            padding: 10px 14px !important;
-        }
-        li[role="option"]:hover, 
-        li[role="option"][aria-selected="true"],
-        div[role="option"][aria-selected="true"] {
-            background-color: #1e3a8a !important;
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-        }
-        li[role="option"]:hover *, 
-        li[role="option"][aria-selected="true"] * {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-        }
+    /* Selected text inside select box - MUST BE VISIBLE */
+    .stSelectbox div[data-baseweb="select"] *,
+    .stSelectbox span, .stSelectbox div,
+    .stMultiSelect div[data-baseweb="select"] *,
+    .stMultiSelect span, .stMultiSelect div {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 15px !important;
+        font-weight: 500 !important;
+        background-color: transparent !important;
+    }
 
-        /* FIX DATAFRAME / GRID VIEW TEXT & BACKGROUND CLARITY */
-        .stDataFrame, [data-testid="stDataFrame"] {
-            background-color: #ffffff !important;
-            border-radius: 8px !important;
-            border: 1px solid #cbd5e1 !important;
-            padding: 4px !important;
-        }
-        
-        /* Table Headers (Column Names) */
-        [data-testid="stDataFrame"] th, 
-        [data-testid="stDataFrame"] table th,
-        .dataframe th {
-            background-color: #1e3a8a !important;
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            font-size: 15px !important;
-            font-weight: 700 !important;
-            text-align: left !important;
-            padding: 10px !important;
-        }
+    /* Dropdown arrow icon */
+    .stSelectbox svg, .stMultiSelect svg {
+        fill: #475569 !important;
+        color: #475569 !important;
+    }
 
-        /* Table Cells (Row Data Text) */
-        [data-testid="stDataFrame"] td, 
-        [data-testid="stDataFrame"] table td,
-        .dataframe td,
-        [data-testid="stDataFrame"] div, 
-        [data-testid="stDataFrame"] span, 
-        [data-testid="stDataFrame"] p {
-            color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
-            font-size: 14.5px !important;
-            font-weight: 500 !important;
-            background-color: transparent !important;
-        }
+    /* ── DROPDOWN POPUP MENU (CRITICAL Z-INDEX + VISIBILITY) ── */
+    div[data-baseweb="popover"] {
+        z-index: 999999 !important;
+    }
+    div[data-baseweb="menu"],
+    ul[role="listbox"] {
+        background-color: #ffffff !important;
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18) !important;
+        z-index: 999999 !important;
+        max-height: 350px !important;
+        overflow-y: auto !important;
+        padding: 4px !important;
+    }
 
-        /* SIDEBAR BUTTONS HIGH VISIBILITY */
-        [data-testid="stSidebar"] .stButton > button {
-            background-color: #ffffff !important;
-            color: #1e3a8a !important;
-            border: 1px solid #94a3b8 !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
-            font-weight: 700 !important;
-        }
-        [data-testid="stSidebar"] .stButton > button * {
-            color: #1e3a8a !important;
-            -webkit-text-fill-color: #1e3a8a !important;
-        }
-        [data-testid="stSidebar"] .stButton > button:hover {
-            background-color: #1e3a8a !important;
-            color: #ffffff !important;
-            border-color: #1e3a8a !important;
-        }
-        [data-testid="stSidebar"] .stButton > button:hover * {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-        }
+    /* Each option in dropdown */
+    li[role="option"],
+    div[role="option"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 15px !important;
+        font-weight: 500 !important;
+        padding: 11px 16px !important;
+        border-radius: 8px !important;
+        margin: 2px 0 !important;
+        cursor: pointer !important;
+    }
+    li[role="option"] *,
+    div[role="option"] * {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 15px !important;
+        background-color: transparent !important;
+    }
 
-        /* Login Box Wrapper */
-        .login-box {
-            max-width: 480px;
-            margin: 40px auto;
-            background: #ffffff;
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e2e8f0;
-        }
+    /* Hovered option */
+    li[role="option"]:hover,
+    div[role="option"]:hover {
+        background-color: #eff6ff !important;
+        color: #1e3a8a !important;
+        -webkit-text-fill-color: #1e3a8a !important;
+    }
+    li[role="option"]:hover *,
+    div[role="option"]:hover * {
+        color: #1e3a8a !important;
+        -webkit-text-fill-color: #1e3a8a !important;
+    }
 
-        /* Metric Dashboard Cards */
-        .metric-card {
-            background: #ffffff;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            border: 1px solid #e2e8f0;
-            border-left: 6px solid #1e3a8a;
-            margin-bottom: 15px;
-        }
-        .metric-card.pending { border-left-color: #ef4444; }
-        .metric-card.progress { border-left-color: #f59e0b; }
-        .metric-card.disposed { border-left-color: #10b981; }
+    /* Selected/highlighted option */
+    li[role="option"][aria-selected="true"],
+    div[role="option"][aria-selected="true"] {
+        background-color: #1e3a8a !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    li[role="option"][aria-selected="true"] *,
+    div[role="option"][aria-selected="true"] * {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
 
-        .metric-title {
-            font-size: 14px !important;
-            font-weight: 700 !important;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin: 0;
-        }
-        .metric-value {
-            font-size: 34px !important;
-            font-weight: 800 !important;
-            color: #0f172a;
-            margin: 6px 0 0 0;
-        }
+    /* Sidebar dropdown overrides */
+    [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] {
+        background-color: rgba(255,255,255,0.1) !important;
+        border-color: rgba(255,255,255,0.2) !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * {
+        color: #e2e8f0 !important;
+        -webkit-text-fill-color: #e2e8f0 !important;
+    }
 
-        /* Dossier Cards */
-        .dossier-card {
-            background: #ffffff;
-            border: 1px solid #cbd5e1;
-            border-radius: 12px;
-            padding: 24px;
-            margin-top: 15px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        }
-        .dossier-header {
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 12px;
-            margin-bottom: 16px;
-        }
-        .dossier-label {
-            font-size: 14px !important;
-            font-weight: 700 !important;
-            color: #475569;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 4px;
-        }
-        .dossier-content-desc {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-left: 4px solid #3b82f6;
-            border-radius: 6px;
-            padding: 14px 16px;
-            font-size: 15.5px !important;
-            line-height: 1.65;
-            color: #1e293b;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .dossier-content-atr {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            border-left: 4px solid #16a34a;
-            border-radius: 6px;
-            padding: 14px 16px;
-            font-size: 15.5px !important;
-            line-height: 1.65;
-            color: #14532d;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
+    /* Number input */
+    .stNumberInput input {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 15px !important;
+        border-radius: 10px !important;
+        border: 1.5px solid #cbd5e1 !important;
+    }
 
-        /* Status Badge */
-        .badge-pending {
-            background-color: #fee2e2;
-            color: #991b1b;
-            padding: 4px 12px;
-            border-radius: 9999px;
-            font-weight: 700;
-            font-size: 13.5px;
-        }
-        .badge-progress {
-            background-color: #fef3c7;
-            color: #92400e;
-            padding: 4px 12px;
-            border-radius: 9999px;
-            font-weight: 700;
-            font-size: 13.5px;
-        }
-        .badge-disposed {
-            background-color: #dcfce7;
-            color: #166534;
-            padding: 4px 12px;
-            border-radius: 9999px;
-            font-weight: 700;
-            font-size: 13.5px;
-        }
+    /* ── LABELS for all inputs ── */
+    .stSelectbox label, .stMultiSelect label,
+    .stTextInput label, .stTextArea label,
+    .stNumberInput label, .stDateInput label,
+    .stFileUploader label {
+        color: #334155 !important;
+        -webkit-text-fill-color: #334155 !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+    }
 
-        /* Footer Styling */
-        .corporate-footer {
-            text-align: center;
-            padding: 20px;
-            margin-top: 50px;
-            font-size: 13.5px !important;
-            color: #64748b;
-            border-top: 1px solid #e2e8f0;
-        }
-    </style>
+    /* ── DATA TABLE / DATAFRAME ── */
+    .stDataFrame, [data-testid="stDataFrame"] {
+        background-color: #ffffff !important;
+        border-radius: 10px !important;
+        border: 1px solid #e2e8f0 !important;
+        overflow-x: auto !important;
+    }
+    [data-testid="stDataFrame"] th,
+    [data-testid="stDataFrame"] table th,
+    .dataframe th {
+        background-color: #1e3a8a !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        font-size: 13.5px !important;
+        font-weight: 700 !important;
+        padding: 10px !important;
+    }
+    [data-testid="stDataFrame"] td,
+    [data-testid="stDataFrame"] table td,
+    .dataframe td {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 13.5px !important;
+        font-weight: 500 !important;
+    }
+
+    /* ── METRIC DASHBOARD CARDS ── */
+    .metric-card {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 22px 20px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        border: 1px solid #e2e8f0;
+        border-left: 5px solid #1e3a8a;
+        margin-bottom: 12px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+    }
+    .metric-card.pending { border-left-color: #ef4444; }
+    .metric-card.progress { border-left-color: #f59e0b; }
+    .metric-card.disposed { border-left-color: #10b981; }
+    .metric-card.rate { border-left-color: #6366f1; }
+    .metric-icon {
+        font-size: 28px !important;
+        margin-bottom: 6px;
+        display: block;
+    }
+    .metric-title {
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        color: #64748b !important;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin: 0;
+    }
+    .metric-value {
+        font-size: 30px !important;
+        font-weight: 800 !important;
+        color: #0f172a !important;
+        margin: 4px 0 0 0;
+        line-height: 1.1;
+    }
+
+    /* ── DOSSIER / CASE CARDS ── */
+    .dossier-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 24px;
+        margin-top: 14px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+    }
+    .dossier-header {
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 14px;
+        margin-bottom: 16px;
+    }
+    .dossier-label {
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        color: #475569 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin-bottom: 6px;
+    }
+    .dossier-content-desc {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #3b82f6;
+        border-radius: 8px;
+        padding: 14px 16px;
+        font-size: 14.5px !important;
+        line-height: 1.65;
+        color: #1e293b !important;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    .dossier-content-atr {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-left: 4px solid #16a34a;
+        border-radius: 8px;
+        padding: 14px 16px;
+        font-size: 14.5px !important;
+        line-height: 1.65;
+        color: #14532d !important;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    /* ── STATUS BADGES ── */
+    .badge-pending {
+        background-color: #fee2e2; color: #991b1b;
+        padding: 5px 14px; border-radius: 20px;
+        font-weight: 700; font-size: 13px;
+    }
+    .badge-progress {
+        background-color: #fef3c7; color: #92400e;
+        padding: 5px 14px; border-radius: 20px;
+        font-weight: 700; font-size: 13px;
+    }
+    .badge-disposed {
+        background-color: #dcfce7; color: #166534;
+        padding: 5px 14px; border-radius: 20px;
+        font-weight: 700; font-size: 13px;
+    }
+
+    /* ── EXPORT TOOLBAR ── */
+    .export-toolbar {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 12px 20px;
+        margin: 14px 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    }
+
+    /* ── SECTION DIVIDER ── */
+    .section-divider {
+        border: none;
+        height: 1px;
+        background: linear-gradient(to right, transparent, #cbd5e1, transparent);
+        margin: 28px 0;
+    }
+
+    /* ── DOWNLOAD BUTTON STYLING ── */
+    .stDownloadButton > button {
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        padding: 9px 20px !important;
+        border-radius: 10px !important;
+        background: linear-gradient(135deg, #1e3a8a, #2563eb) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 3px 10px rgba(30, 58, 138, 0.25) !important;
+    }
+    .stDownloadButton > button:hover {
+        box-shadow: 0 6px 16px rgba(30, 58, 138, 0.35) !important;
+        transform: translateY(-1px);
+    }
+    .stDownloadButton > button * {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+
+    /* ── ANALYTICS SECTION CARDS ── */
+    .analytics-section {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+    .analytics-section-title {
+        font-size: 16px !important;
+        font-weight: 700 !important;
+        color: #1e3a8a !important;
+        margin-bottom: 14px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e2e8f0;
+    }
+
+    /* ── LEADERBOARD TABLE ── */
+    .leaderboard-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 16px;
+        border-radius: 8px;
+        margin-bottom: 4px;
+        font-size: 14px !important;
+    }
+    .leaderboard-row:nth-child(odd) { background: #f8fafc; }
+    .leaderboard-row:nth-child(even) { background: #ffffff; }
+    .leaderboard-rank {
+        font-weight: 800;
+        color: #1e3a8a;
+        width: 36px;
+        text-align: center;
+    }
+    .leaderboard-name {
+        flex: 1;
+        font-weight: 600;
+        color: #334155;
+        padding: 0 12px;
+    }
+    .leaderboard-value {
+        font-weight: 800;
+        padding: 3px 12px;
+        border-radius: 12px;
+        font-size: 13px !important;
+    }
+
+    /* ── FOOTER ── */
+    .corporate-footer {
+        text-align: center;
+        padding: 24px;
+        margin-top: 50px;
+        font-size: 13px !important;
+        color: #64748b !important;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    /* ── FIX: PREVENT CONTAINER CLIPPING DROPDOWNS ── */
+    .main .block-container { overflow: visible !important; }
+    [data-testid="stForm"] { overflow: visible !important; }
+    .element-container { overflow: visible !important; }
+
+    /* ── FIX: EXPANDER TEXT ── */
+    .streamlit-expanderHeader p {
+        font-size: 15px !important;
+        font-weight: 600 !important;
+        color: #1e3a8a !important;
+    }
+</style>
 """, unsafe_allow_html=True)
 
-# Static Registry for Authentication
+# ============================================================
+# 4. USER REGISTRY (STATIC AUTHENTICATION)
+# ============================================================
 USER_REGISTRY = {
     "OFF-SADAR-SDO": {"name": "Sadar Subdivision Office (Nawada)", "role": "Block"},
     "OFF-RAJAULI-SDO": {"name": "Rajauli Subdivision Office", "role": "Block"},
@@ -508,17 +770,18 @@ USER_REGISTRY = {
     "ADMIN-NAWADA-DM": {"name": "District Admin Dashboard (DM Level)", "role": "District"}
 }
 
-# SESSION PERSISTENCE
-if "password_db" not in st.session_state:
-    st.session_state["password_db"] = {uid: "Nawada@123" for uid in USER_REGISTRY}
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-if "current_user" not in st.session_state:
-    st.session_state["current_user"] = None
-if "otp_sent" not in st.session_state:
-    st.session_state["otp_sent"] = False
-if "temp_uid" not in st.session_state:
-    st.session_state["temp_uid"] = None
+# ============================================================
+# 5. SESSION STATE PERSISTENCE
+# ============================================================
+for key, default in [
+    ("password_db", {uid: "Nawada@123" for uid in USER_REGISTRY}),
+    ("authenticated", False),
+    ("current_user", None),
+    ("otp_sent", False),
+    ("temp_uid", None),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 if not st.session_state["authenticated"]:
     persisted_user = st.query_params.get("session_auth", None)
@@ -526,7 +789,11 @@ if not st.session_state["authenticated"]:
         st.session_state["authenticated"] = True
         st.session_state["current_user"] = persisted_user
 
-# FETCH USER PROFILE DIRECTLY FROM SUPABASE DATABASE
+
+# ============================================================
+# 6. HELPER FUNCTIONS
+# ============================================================
+
 def get_user_profile(user_code):
     """Fetches official officer profile from Supabase user_profiles table."""
     if supabase is None or not user_code:
@@ -539,13 +806,32 @@ def get_user_profile(user_code):
         pass
     return None
 
-# ATTENDANCE DATABASE HELPERS
+def get_profile_photo_url(raw_url):
+    """Returns a working photo URL. Uses signed URL for Supabase storage, inline SVG fallback."""
+    if not raw_url or not isinstance(raw_url, str) or not raw_url.strip().startswith("http"):
+        return DEFAULT_AVATAR
+    url = raw_url.strip()
+    # Generate signed URL if from Supabase storage
+    if supabase and "supabase" in url.lower():
+        try:
+            filename = url.split("/")[-1].split("?")[0]
+            res = supabase.storage.from_("profile-photos").create_signed_url(filename, 7200)
+            if isinstance(res, dict):
+                signed = res.get('signedUrl') or res.get('signedURL')
+                if signed:
+                    return signed
+        except Exception:
+            pass
+    return url
+
 def upload_attendance_record(payload):
     """Upserts monthly attendance record for an employee."""
     if supabase is None:
         return False
     try:
-        supabase.table("monthly_attendance").upsert(payload, on_conflict="month,year,office_code,employee_name").execute()
+        supabase.table("monthly_attendance").upsert(
+            payload, on_conflict="month,year,office_code,employee_name"
+        ).execute()
         return True
     except Exception as e:
         st.error(f"Failed to submit attendance: {e}")
@@ -564,8 +850,8 @@ def load_monthly_attendance(month, year):
         st.error(f"Error fetching attendance data: {e}")
         return pd.DataFrame()
 
-# AUTO-COMPRESSION FOR CRISP A4 PRINT-READY RESOLUTION
 def process_and_compress_file(uploaded_file):
+    """Auto-compress images to crisp A4 print-ready resolution."""
     file_bytes = uploaded_file.read()
     orig_kb = len(file_bytes) // 1024
     file_type = uploaded_file.type or "application/octet-stream"
@@ -575,17 +861,14 @@ def process_and_compress_file(uploaded_file):
             img = Image.open(io.BytesIO(file_bytes))
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
-            
             max_dim = 1800
             if max(img.size) > max_dim:
                 ratio = max_dim / float(max(img.size))
                 new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
-            
             out_buf = io.BytesIO()
             img.save(out_buf, format="JPEG", quality=82, optimize=True)
             compressed_bytes = out_buf.getvalue()
-            
             if len(compressed_bytes) < len(file_bytes):
                 file_bytes = compressed_bytes
                 file_type = "image/jpeg"
@@ -595,75 +878,241 @@ def process_and_compress_file(uploaded_file):
     final_kb = len(file_bytes) // 1024
     return file_bytes, file_type, orig_kb, final_kb
 
-# SECURE STORAGE URL & SIGNED URL RESOLVER
 def get_secure_file_url(stored_val, bucket_name="complaint-documents"):
+    """Generates a secure signed URL for file access."""
     if not stored_val or not isinstance(stored_val, str):
         return ""
     val = stored_val.strip()
-    
-    # Extract filename correctly
     file_path = val
     if "/" in val:
         file_path = val.split("/")[-1].split("?")[0]
-        
     try:
         if supabase and file_path:
             res = supabase.storage.from_(bucket_name).create_signed_url(file_path, 7200)
-            if isinstance(res, dict) and 'signedUrl' in res:
-                return res['signedUrl']
-            elif isinstance(res, dict) and 'signedURL' in res:
-                return res['signedURL']
-            elif hasattr(res, 'get') and res.get('signedUrl'):
-                return res.get('signedUrl')
+            if isinstance(res, dict):
+                return res.get('signedUrl') or res.get('signedURL') or val
     except Exception:
         pass
-    
     if val.startswith("http://"):
         return val.replace("http://", "https://", 1)
     return val
 
-# STREAMLIT DIRECT FILE DOWNLOAD / VIEW BUTTON (DIRECT STREAMING FALLBACK)
-def render_file_action_button(file_url, btn_label="📄 View / Download Attachment", key_id="1", bucket_name="complaint-documents"):
+def render_file_action_button(file_url, btn_label="📄 View / Download", key_id="1", bucket_name="complaint-documents"):
+    """Renders a direct link button for file download/view."""
     if not file_url or not str(file_url).strip():
         st.caption("📎 No file attached.")
         return
-
-    # Generate Fresh Signed Link
     signed_url = get_secure_file_url(file_url, bucket_name=bucket_name)
-    
-    # Render Direct Link Button
     st.markdown(
         f'<a href="{signed_url}" target="_blank" style="text-decoration: none;">'
-        f'<button style="background-color: #1e3a8a; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 700; cursor: pointer;">'
+        f'<button style="background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; padding: 8px 18px; '
+        f'border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 13px; '
+        f'box-shadow: 0 2px 6px rgba(30,58,138,0.25);">'
         f'{btn_label}</button></a>',
         unsafe_allow_html=True
     )
 
-# CLEAN UPLOAD LOGIC TO PREVENT DUPLICATE FILENAMES
 def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
+    """Uploads file to Supabase Storage with clean naming."""
     if uploaded_file is None or supabase is None:
         return ""
     try:
         file_bytes, file_type, orig_kb, final_kb = process_and_compress_file(uploaded_file)
         ext = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "pdf"
-        
-        # Clean naming: PREFIX_TIMESTAMP.EXT
         file_name = f"{file_prefix}_{int(datetime.now().timestamp())}.{ext}"
         bucket_name = "complaint-documents"
-        
         supabase.storage.from_(bucket_name).upload(
-            file_name,
-            file_bytes,
+            file_name, file_bytes,
             file_options={"content-type": file_type, "x-upsert": "true"}
         )
-        
-        public_url = supabase.storage.from_(bucket_name).get_public_url(file_name)
-        return public_url
+        return supabase.storage.from_(bucket_name).get_public_url(file_name)
     except Exception as e:
-        st.error(f"Error uploading file to Supabase Storage: {e}")
+        st.error(f"Error uploading file: {e}")
         return ""
 
-# DATA LOADING & FETCHING FROM SUPABASE POSTGRESQL
+# ============================================================
+# 7. PDF REPORT GENERATION (fpdf2)
+# ============================================================
+
+def generate_grievance_pdf(df, title="Grievance Registry Report", subtitle=""):
+    """Generate a professional PDF report from grievance dataframe."""
+    if not FPDF_AVAILABLE:
+        return None
+
+    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Header
+    pdf.set_font('Helvetica', 'B', 20)
+    pdf.set_text_color(30, 58, 138)
+    pdf.cell(0, 12, 'GOVERNMENT OF BIHAR', 0, 1, 'C')
+    pdf.set_font('Helvetica', 'B', 15)
+    pdf.cell(0, 10, 'DISTRICT ADMINISTRATION, NAWADA', 0, 1, 'C')
+    pdf.set_font('Helvetica', '', 11)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 8, title, 0, 1, 'C')
+    if subtitle:
+        pdf.cell(0, 6, subtitle, 0, 1, 'C')
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(0, 7, f'Generated: {datetime.now().strftime("%d-%b-%Y %I:%M %p")}', 0, 1, 'C')
+    pdf.ln(3)
+
+    # Horizontal rule
+    pdf.set_draw_color(30, 58, 138)
+    pdf.set_line_width(0.6)
+    pdf.line(10, pdf.get_y(), 287, pdf.get_y())
+    pdf.ln(5)
+
+    # Summary statistics
+    status_col = 'Normalized_Status' if 'Normalized_Status' in df.columns else 'Status'
+    if status_col in df.columns:
+        total = len(df)
+        pending = len(df[df[status_col] == 'Pending'])
+        progress = len(df[df[status_col] == 'In Progress'])
+        disposed = len(df[df[status_col] == 'Disposed'])
+        rate = round((disposed / total) * 100, 1) if total > 0 else 0
+
+        pdf.set_font('Helvetica', 'B', 10)
+        pdf.set_fill_color(248, 250, 252)
+        pdf.cell(0, 8,
+            f'   Total: {total}   |   Pending: {pending}   |   In Progress: {progress}   |   Disposed: {disposed}   |   Disposal Rate: {rate}%',
+            1, 1, 'L', True)
+        pdf.ln(4)
+
+    # Prepare columns
+    export_cols = ['Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category', 'Status', 'Description', 'District Action/Opinion']
+    # Map Normalized_Status to Status for display
+    df_export = df.copy()
+    if 'Normalized_Status' in df_export.columns:
+        df_export['Status'] = df_export['Normalized_Status']
+    available = [c for c in export_cols if c in df_export.columns]
+
+    widths = {'Date': 22, 'Jurisdiction': 42, 'Complaint ID': 28, 'Reference No': 25,
+              'Category': 28, 'Status': 22, 'Description': 58, 'District Action/Opinion': 52}
+
+    def print_table_header():
+        pdf.set_font('Helvetica', 'B', 8)
+        pdf.set_fill_color(30, 58, 138)
+        pdf.set_text_color(255, 255, 255)
+        for col in available:
+            w = widths.get(col, 30)
+            pdf.cell(w, 7, col, 1, 0, 'C', True)
+        pdf.ln()
+        pdf.set_text_color(15, 23, 42)
+
+    print_table_header()
+
+    # Data rows
+    pdf.set_font('Helvetica', '', 7)
+    fill = False
+    for _, row in df_export.iterrows():
+        if pdf.get_y() > 180:
+            pdf.add_page()
+            print_table_header()
+            pdf.set_font('Helvetica', '', 7)
+
+        if fill:
+            pdf.set_fill_color(248, 250, 252)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+
+        for col in available:
+            w = widths.get(col, 30)
+            val = str(row.get(col, ''))
+            max_chars = max(int(w * 0.45), 8)
+            if len(val) > max_chars:
+                val = val[:max_chars - 2] + '..'
+            pdf.cell(w, 6, val.encode('latin-1', 'replace').decode('latin-1'), 1, 0, 'L', True)
+        pdf.ln()
+        fill = not fill
+
+    # Footer
+    pdf.ln(8)
+    pdf.set_font('Helvetica', 'I', 8)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 5, 'System-generated report | District Grievance Monitoring Portal | Nawada HQ', 0, 1, 'C')
+
+    return bytes(pdf.output())
+
+
+def generate_attendance_pdf(df, month, year):
+    """Generate a professional PDF for attendance/payroll data."""
+    if not FPDF_AVAILABLE:
+        return None
+
+    month_names = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December']
+
+    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    pdf.set_font('Helvetica', 'B', 20)
+    pdf.set_text_color(30, 58, 138)
+    pdf.cell(0, 12, 'GOVERNMENT OF BIHAR', 0, 1, 'C')
+    pdf.set_font('Helvetica', 'B', 15)
+    pdf.cell(0, 10, 'DISTRICT ADMINISTRATION, NAWADA', 0, 1, 'C')
+    pdf.set_font('Helvetica', '', 11)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 8, f'Monthly Attendance & Payroll Report - {month_names[month]} {year}', 0, 1, 'C')
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(0, 7, f'Generated: {datetime.now().strftime("%d-%b-%Y %I:%M %p")}', 0, 1, 'C')
+    pdf.ln(3)
+    pdf.set_draw_color(30, 58, 138)
+    pdf.set_line_width(0.6)
+    pdf.line(10, pdf.get_y(), 287, pdf.get_y())
+    pdf.ln(5)
+
+    cols = ['office_name', 'employee_name', 'designation', 'attendance_status',
+            'total_working_days', 'days_present', 'days_absent', 'remarks']
+    headers = ['Office', 'Employee', 'Designation', 'Status', 'Working', 'Present', 'Absent', 'Remarks']
+    col_widths = [52, 40, 32, 25, 22, 22, 22, 62]
+
+    def print_att_header():
+        pdf.set_font('Helvetica', 'B', 8)
+        pdf.set_fill_color(30, 58, 138)
+        pdf.set_text_color(255, 255, 255)
+        for i, h in enumerate(headers):
+            pdf.cell(col_widths[i], 7, h, 1, 0, 'C', True)
+        pdf.ln()
+        pdf.set_text_color(15, 23, 42)
+
+    print_att_header()
+
+    pdf.set_font('Helvetica', '', 7)
+    fill = False
+    for _, row in df.iterrows():
+        if pdf.get_y() > 180:
+            pdf.add_page()
+            print_att_header()
+            pdf.set_font('Helvetica', '', 7)
+
+        if fill:
+            pdf.set_fill_color(248, 250, 252)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+
+        for i, col in enumerate(cols):
+            val = str(row.get(col, ''))
+            max_chars = max(int(col_widths[i] * 0.45), 8)
+            if len(val) > max_chars:
+                val = val[:max_chars - 2] + '..'
+            pdf.cell(col_widths[i], 6, val.encode('latin-1', 'replace').decode('latin-1'), 1, 0, 'L', True)
+        pdf.ln()
+        fill = not fill
+
+    pdf.ln(8)
+    pdf.set_font('Helvetica', 'I', 8)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 5, 'System-generated report | District Attendance & Payroll Portal | Nawada HQ', 0, 1, 'C')
+
+    return bytes(pdf.output())
+
+# ============================================================
+# 8. DATA LOADING FROM SUPABASE
+# ============================================================
+
 def standardize_status(status_str, remarks, res_date):
     s = str(status_str).strip()
     if s in ["Disposed", "Resolved", "Closed", "Disposed / Resolved", "Disposed (ATR Issued)"]:
@@ -686,39 +1135,27 @@ def load_data():
         data = response.data
         if not data:
             return pd.DataFrame(columns=[
-                'date', 'jurisdiction', 'complaint_id', 'reference_no', 'category', 
-                'status', 'description', 'district_action_opinion', 'resolution_date', 
+                'date', 'jurisdiction', 'complaint_id', 'reference_no', 'category',
+                'status', 'description', 'district_action_opinion', 'resolution_date',
                 'uploaded_file_url', 'submitted_by_code', 'atr_response_file_url', 'Normalized_Status'
             ])
-        
+
         df = pd.DataFrame(data)
-        
         col_mapping = {
-            'date': 'Date',
-            'jurisdiction': 'Jurisdiction',
-            'complaint_id': 'Complaint ID',
-            'reference_no': 'Reference No',
-            'category': 'Category',
-            'status': 'Status',
-            'description': 'Description',
-            'district_action_opinion': 'District Action/Opinion',
-            'resolution_date': 'Resolution Date',
-            'uploaded_file_url': 'Uploaded File URL',
-            'submitted_by_code': 'Submitted By Code',
-            'atr_response_file_url': 'ATR Response File URL'
+            'date': 'Date', 'jurisdiction': 'Jurisdiction', 'complaint_id': 'Complaint ID',
+            'reference_no': 'Reference No', 'category': 'Category', 'status': 'Status',
+            'description': 'Description', 'district_action_opinion': 'District Action/Opinion',
+            'resolution_date': 'Resolution Date', 'uploaded_file_url': 'Uploaded File URL',
+            'submitted_by_code': 'Submitted By Code', 'atr_response_file_url': 'ATR Response File URL'
         }
         df = df.rename(columns=col_mapping)
-        
         if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date']).dt.date
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
         df = df.fillna("")
 
-        expected_cols = [
-            'Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category', 
-            'Status', 'Description', 'District Action/Opinion', 'Resolution Date', 
-            'Uploaded File URL', 'Submitted By Code', 'ATR Response File URL'
-        ]
-        for col in expected_cols:
+        for col in ['Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category',
+                     'Status', 'Description', 'District Action/Opinion', 'Resolution Date',
+                     'Uploaded File URL', 'Submitted By Code', 'ATR Response File URL']:
             if col not in df.columns:
                 df[col] = ""
 
@@ -733,112 +1170,137 @@ def load_data():
 
 df_global = load_data()
 
-# Header Component
+
+# ============================================================
+# 9. HEADER BANNER
+# ============================================================
 st.markdown("""
-<div class="corporate-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 26px 30px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.15); text-align: center;">
-    <h1 style="color: #ffffff !important; margin: 0 0 8px 0; font-size: 28px !important; font-weight: 800 !important; letter-spacing: 0.8px; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">GOVERNMENT OF BIHAR | DISTRICT ADMINISTRATION NAWADA</h1>
-    <p style="color: #cbd5e1 !important; margin: 0; font-size: 16px !important; font-weight: 500; letter-spacing: 0.3px;">Integrated Grievance Redressal &amp; Operational IT Monitoring Infrastructure</p>
+<div class="corporate-header">
+    <h1>🏛️ GOVERNMENT OF BIHAR — DISTRICT ADMINISTRATION NAWADA</h1>
+    <p>Integrated Grievance Redressal &amp; Operational IT Monitoring Infrastructure</p>
+    <div class="header-badge">🔒 Secure Government Portal • SSL Encrypted • Session Monitored</div>
 </div>
 """, unsafe_allow_html=True)
 
-# SECURE LOGIN SCREEN
+# ============================================================
+# 10. LOGIN PAGE (PROFESSIONAL — NETWORK UNIVERSAL)
+# ============================================================
 if not st.session_state["authenticated"]:
-    st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.subheader("🔐 Secure System Authentication")
-    
-    if not st.session_state["otp_sent"]:
-        input_uid = st.text_input("Enter Official Office Code (User ID)").strip()
-        input_pwd = st.text_input("Enter System Password", type="password")
-        
-        if st.button("Verify Credentials & Send OTP", use_container_width=True):
-            if input_uid in USER_REGISTRY and input_pwd == st.session_state["password_db"][input_uid]:
-                st.session_state["otp_sent"] = True
-                st.session_state["temp_uid"] = input_uid
-                st.success("✅ Password Verified! OTP has been routed to registered nodal mobile.")
-                st.rerun()
-            else:
-                st.error("❌ Invalid Office Code or Password. Access Denied.")
-                
-    else:
-        st.info(f"🔑 Session Active for Code: `{st.session_state['temp_uid']}`")
-        input_otp = st.text_input("Enter 4-Digit Verification OTP", type="password", max_chars=4)
-        
-        user_role = USER_REGISTRY[st.session_state["temp_uid"]]["role"]
-        required_otp = "9999" if user_role == "District" else "1234"
-        
-        st.caption(f"💡 For Testing: Use OTP **`{required_otp}`** for this {user_role} level access.")
-        
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("Verify OTP & Login", use_container_width=True):
-                if input_otp == required_otp:
-                    st.session_state["authenticated"] = True
-                    st.session_state["current_user"] = st.session_state["temp_uid"]
-                    st.query_params["session_auth"] = st.session_state["temp_uid"]
-                    st.success("Authorization Successful! Connecting to secure server...")
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid OTP. Security Token mismatch.")
-        with col_btn2:
-            if st.button("Back to Login", use_container_width=True):
-                st.session_state["otp_sent"] = False
-                st.session_state["temp_uid"] = None
-                st.rerun()
-                
-    st.markdown('</div>', unsafe_allow_html=True)
 
-# SECURE ROUTING SYSTEM (POST LOGIN)
+    # Centered login form
+    lcol1, lcol2, lcol3 = st.columns([1, 2, 1])
+    with lcol2:
+        st.markdown("""
+        <div class="login-box">
+            <div class="login-seal"><span>🏛️</span></div>
+            <div class="login-title">District Command Centre</div>
+            <div class="login-subtitle">Authorized Personnel Access Only — All Sessions Monitored</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not st.session_state["otp_sent"]:
+            with st.container():
+                input_uid = st.text_input(
+                    "🏢 Official Office Code (User ID)",
+                    placeholder="e.g., BLK-NW-SADAR or ADMIN-NAWADA-DM"
+                ).strip()
+                input_pwd = st.text_input(
+                    "🔑 System Password",
+                    type="password",
+                    placeholder="Enter your assigned password"
+                )
+
+                if st.button("🔐 Verify Credentials & Request OTP", use_container_width=True):
+                    if input_uid in USER_REGISTRY and input_pwd == st.session_state["password_db"].get(input_uid):
+                        st.session_state["otp_sent"] = True
+                        st.session_state["temp_uid"] = input_uid
+                        st.success("✅ Credentials verified! OTP dispatched to registered nodal mobile.")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid Office Code or Password. Access Denied.")
+
+                st.markdown("""
+                <div class="login-security-badge">
+                    <span>🛡️</span>
+                    <span>Protected by Multi-Factor Authentication • Government Firewall Compliant</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+        else:
+            with st.container():
+                st.info(f"🔑 Session Active for Code: `{st.session_state['temp_uid']}`")
+                input_otp = st.text_input(
+                    "🔢 Enter 4-Digit Verification OTP",
+                    type="password",
+                    max_chars=4,
+                    placeholder="Enter OTP received"
+                )
+
+                user_role = USER_REGISTRY[st.session_state["temp_uid"]]["role"]
+                required_otp = "9999" if user_role == "District" else "1234"
+                st.caption(f"💡 Testing: Use OTP **`{required_otp}`** for {user_role} level access.")
+
+                btn_c1, btn_c2 = st.columns(2)
+                with btn_c1:
+                    if st.button("✅ Verify OTP & Login", use_container_width=True):
+                        if input_otp == required_otp:
+                            st.session_state["authenticated"] = True
+                            st.session_state["current_user"] = st.session_state["temp_uid"]
+                            st.query_params["session_auth"] = st.session_state["temp_uid"]
+                            st.success("🚀 Authorization Successful! Connecting to secure server...")
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid OTP. Security token mismatch.")
+                with btn_c2:
+                    if st.button("↩️ Back to Login", use_container_width=True):
+                        st.session_state["otp_sent"] = False
+                        st.session_state["temp_uid"] = None
+                        st.rerun()
+
+# ============================================================
+# 11. POST-LOGIN: MAIN APPLICATION
+# ============================================================
 else:
     user_info = USER_REGISTRY[st.session_state["current_user"]]
     current_role = user_info["role"]
     assigned_office = user_info["name"]
     current_code = st.session_state["current_user"]
-    
-    # Live Profile Integration from Supabase
+
+    # ── SIDEBAR PROFILE ──
     profile_data = get_user_profile(current_code)
-    
+
     if profile_data:
         officer_name = profile_data.get("officer_name") or "Authorized Officer"
         office_name = profile_data.get("office_name") or assigned_office
         designation = profile_data.get("designation") or "Desk Representative"
         epf_number = profile_data.get("epf_no") or "N/A"
-        photo_url = str(profile_data.get("photo_url") or "").strip()
+        raw_photo = str(profile_data.get("photo_url") or "").strip()
+        photo_url = get_profile_photo_url(raw_photo)
     else:
         officer_name = "Authorized Officer"
         office_name = assigned_office
         designation = "Desk Representative"
         epf_number = "N/A"
-        photo_url = ""
+        photo_url = DEFAULT_AVATAR
 
-    default_avatar = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
-    if not photo_url or not photo_url.startswith("http"):
-        photo_url = default_avatar
-
-    # INLINE HTML WITH AUTO-FALLBACK FOR BROKEN/MISSING IMAGES
+    # Sidebar profile card with inline fallback
     st.sidebar.markdown(f"""
-        <div class="sidebar-profile-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%) !important;">
-            <img src="{photo_url}" 
-                 onerror="this.onerror=null; this.src='{default_avatar}';"
-                 style="
-                    width: 100px !important;
-                    height: 100px !important;
-                    border-radius: 50% !important;
-                    border: 3px solid #60a5fa !important;
-                    margin: 0 auto 12px auto !important;
-                    object-fit: cover !important;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
-                    display: block !important;
-                 " />
-            <h3 style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; font-weight: 800 !important; margin-bottom: 4px !important;">{officer_name}</h3>
-            <p class="desig-text" style="color: #93c5fd !important; -webkit-text-fill-color: #93c5fd !important; font-weight: 700 !important;">{designation}</p>
-            <p class="office-text" style="color: #e2e8f0 !important; -webkit-text-fill-color: #e2e8f0 !important;">{office_name}</p>
-            <div class="info-badge" style="color: #ffffff !important;">
-                <span style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;"><b style="color: #93c5fd !important; -webkit-text-fill-color: #93c5fd !important;">EPF No:</b> {epf_number}</span>
-                <span style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;"><b style="color: #93c5fd !important; -webkit-text-fill-color: #93c5fd !important;">Code:</b> {current_code}</span>
+        <div class="sidebar-profile-card">
+            <img src="{photo_url}"
+                 onerror="this.onerror=null; this.src='{DEFAULT_AVATAR}';"
+                 class="profile-avatar" />
+            <h3>{officer_name}</h3>
+            <p class="desig-text">{designation}</p>
+            <p class="office-text">{office_name}</p>
+            <div class="info-badge">
+                <span><b>EPF:</b> {epf_number}</span>
+                <span><b>Code:</b> {current_code}</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
-    
+
+    # Sidebar action buttons
+    st.sidebar.markdown("---")
     if st.sidebar.button("🔄 Refresh Data From Cloud", use_container_width=True):
         st.cache_data.clear() if hasattr(st, "cache_data") else None
         st.rerun()
@@ -851,6 +1313,21 @@ else:
             del st.query_params["session_auth"]
         st.rerun()
 
+    # Sidebar system info
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"""
+        <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 10px; padding: 12px; font-size: 12px !important;">
+            <p style="color: #94a3b8 !important; margin: 0 0 4px 0; font-size: 12px !important;">
+                <b style="color: #93c5fd !important;">🏢 Role:</b> {current_role} Level</p>
+            <p style="color: #94a3b8 !important; margin: 0 0 4px 0; font-size: 12px !important;">
+                <b style="color: #93c5fd !important;">📅 Session:</b> {datetime.now().strftime('%d-%b-%Y %I:%M %p')}</p>
+            <p style="color: #94a3b8 !important; margin: 0; font-size: 12px !important;">
+                <b style="color: #93c5fd !important;">🔗 Status:</b> Connected (Supabase Live)</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ── SHARED DOSSIER CARD RENDERER ──
     def render_dossier_card(row_data, is_district=False):
         status_val = row_data.get('Normalized_Status', row_data.get('Status', 'Pending'))
         badge_class = "badge-pending"
@@ -862,20 +1339,18 @@ else:
         st.markdown(f"""
             <div class="dossier-card">
                 <div class="dossier-header">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                         <div>
-                            <span style="font-size: 20px; font-weight: 800; color: #1e3a8a;">Ticket ID: {row_data.get('Complaint ID', 'N/A')}</span>
-                            <span style="margin-left: 12px; font-size: 15px; color: #64748b;">(Ref: {row_data.get('Reference No', 'N/A')})</span>
+                            <span style="font-size: 18px; font-weight: 800; color: #1e3a8a;">Ticket ID: {row_data.get('Complaint ID', 'N/A')}</span>
+                            <span style="margin-left: 10px; font-size: 14px; color: #64748b;">(Ref: {row_data.get('Reference No', 'N/A')})</span>
                         </div>
-                        <div>
-                            <span class="{badge_class}">● {status_val.upper()}</span>
-                        </div>
+                        <div><span class="{badge_class}">● {status_val.upper()}</span></div>
                     </div>
-                    <div style="margin-top: 8px; font-size: 14.5px; color: #475569;">
-                        <strong>Submitting Office:</strong> {row_data.get('Jurisdiction', 'N/A')} &nbsp;|&nbsp; 
-                        <strong>Sector:</strong> {row_data.get('Category', 'N/A')} &nbsp;|&nbsp; 
+                    <div style="margin-top: 8px; font-size: 13.5px; color: #475569;">
+                        <strong>Office:</strong> {row_data.get('Jurisdiction', 'N/A')} &nbsp;|&nbsp;
+                        <strong>Sector:</strong> {row_data.get('Category', 'N/A')} &nbsp;|&nbsp;
                         <strong>Date:</strong> {row_data.get('Date', 'N/A')} &nbsp;|&nbsp;
-                        <strong>Resolution Date:</strong> {row_data.get('Resolution Date', 'Awaiting ATR')}
+                        <strong>Resolution:</strong> {row_data.get('Resolution Date', 'Awaiting ATR')}
                     </div>
                 </div>
             </div>
@@ -883,167 +1358,158 @@ else:
 
         col_d1, col_d2 = st.columns(2)
         with col_d1:
-            st.markdown('<div class="dossier-label">📝 Problem Description (From Submitting Block):</div>', unsafe_allow_html=True)
+            st.markdown('<div class="dossier-label">📝 Problem Description:</div>', unsafe_allow_html=True)
             desc_text = row_data.get('Description', 'No description provided.')
             st.markdown(f'<div class="dossier-content-desc">{desc_text}</div>', unsafe_allow_html=True)
-            
             raw_c_file = str(row_data.get('Uploaded File URL', ''))
-            st.markdown('<div style="margin-top: 10px;">', unsafe_allow_html=True)
-            render_file_action_button(raw_c_file, btn_label="📄 View / Print Original Complaint Attachment", key_id=f"cpl_{row_data.get('Complaint ID')}")
-            st.markdown('</div>', unsafe_allow_html=True)
+            render_file_action_button(raw_c_file, btn_label="📄 View Complaint Attachment", key_id=f"cpl_{row_data.get('Complaint ID')}")
 
         with col_d2:
-            st.markdown('<div class="dossier-label">⚖ District Action Taken Report (ATR Directives):</div>', unsafe_allow_html=True)
+            st.markdown('<div class="dossier-label">⚖ District ATR Directive:</div>', unsafe_allow_html=True)
             atr_text = row_data.get('District Action/Opinion', '')
             if not str(atr_text).strip():
-                atr_text = "Pending evaluation at District Administration Level. Action Taken Report (ATR) will be published post audit."
+                atr_text = "Pending evaluation. ATR will be published post audit."
                 st.markdown(f'<div class="dossier-content-desc" style="border-left-color: #f59e0b; background: #fffbeb; color: #b45309;">⏳ {atr_text}</div>', unsafe_allow_html=True)
             else:
                 st.markdown(f'<div class="dossier-content-atr">✅ {atr_text}</div>', unsafe_allow_html=True)
-
             raw_atr_file = str(row_data.get('ATR Response File URL', ''))
-            st.markdown('<div style="margin-top: 10px;">', unsafe_allow_html=True)
-            render_file_action_button(raw_atr_file, btn_label="📄 View / Print Official ATR Response Document", key_id=f"atr_{row_data.get('Complaint ID')}")
-            st.markdown('</div>', unsafe_allow_html=True)
+            render_file_action_button(raw_atr_file, btn_label="📄 View ATR Document", key_id=f"atr_{row_data.get('Complaint ID')}")
 
-    # ------------------------------------------
-    # ROLE A: COMPREHENSIVE BLOCK PORTAL
-    # ------------------------------------------
+    # ====================================================
+    # ROLE A: BLOCK PORTAL
+    # ====================================================
     if current_role == "Block":
-        st.markdown(f"### 📝 Welcome, Authorized Desk - {assigned_office}")
-        
+        st.markdown(f"### 📝 Welcome — {assigned_office}")
+
         tab_new, tab_report, tab_att = st.tabs([
-            "🆕 File New Grievance", 
-            "📊 My Office Performance Reports (ATR)",
-            "📅 Monthly Attendance Submission"
+            "🆕 File New Grievance",
+            "📊 My Office Reports & ATR",
+            "📅 Monthly Attendance"
         ])
-        
+
+        # ── TAB 1: FILE NEW GRIEVANCE ──
         with tab_new:
             with st.form(key="block_grievance_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
                 with col1:
-                    issue_date = st.date_input("Identification Date", value=date.today())
-                    st.text_input("Submitting Jurisdiction", value=assigned_office, disabled=True)
-                    category = st.selectbox("Operational Sector Domain", ["RTPS", "Lok Shikayat", "E-Kalyan", "Social Security", "Administrative Issue", "Hardware/Network"])
+                    issue_date = st.date_input("📅 Identification Date", value=date.today())
+                    st.text_input("🏢 Submitting Jurisdiction", value=assigned_office, disabled=True)
+                    category = st.selectbox("📂 Operational Sector Domain",
+                        ["RTPS", "Lok Shikayat", "E-Kalyan", "Social Security", "Administrative Issue", "Hardware/Network"])
                 with col2:
-                    ref_no = st.text_input("Official Reference Number (If Available)", placeholder="e.g., RTPS/2026/XXXX")
+                    ref_no = st.text_input("📋 Reference Number (Optional)", placeholder="e.g., RTPS/2026/XXXX")
                     comp_id = f"CPL{int(datetime.now().timestamp())}"
-                    st.text_input("Unique Case Identifier (Auto)", value=comp_id, disabled=True)
-                
-                description = st.text_area("Detailed Problem Classification / Error Logs (Text will auto-wrap)", height=140)
-                
-                uploaded_file = st.file_uploader(
-                    "Attach Supporting Document (PDF, JPG, PNG - Auto-compressed to high-clarity A4 print resolution)", 
-                    type=["pdf", "jpg", "png"]
-                )
-                
-                if st.form_submit_button("🚀 Transmit Records to District HQ", use_container_width=True):
-                    if not description.strip():
-                        st.error("❌ Description matrix cannot be left blank.")
-                    else:
-                        with st.spinner("Uploading document & saving record to Supabase..."):
-                            public_file_url = upload_file_to_supabase(uploaded_file, file_prefix=comp_id) if uploaded_file else ""
+                    st.text_input("🔖 Case Identifier (Auto)", value=comp_id, disabled=True)
 
+                description = st.text_area("📝 Detailed Problem Description", height=140,
+                    placeholder="Describe the issue in detail including error logs, affected services, etc.")
+                uploaded_file = st.file_uploader(
+                    "📎 Attach Document (PDF, JPG, PNG — Auto-compressed)", type=["pdf", "jpg", "png"])
+
+                if st.form_submit_button("🚀 Transmit to District HQ", use_container_width=True):
+                    if not description.strip():
+                        st.error("❌ Description is required.")
+                    else:
+                        with st.spinner("Uploading & saving to Supabase..."):
+                            public_file_url = upload_file_to_supabase(uploaded_file, file_prefix=comp_id) if uploaded_file else ""
                             db_payload = {
-                                "date": str(issue_date),
-                                "jurisdiction": assigned_office,
-                                "complaint_id": comp_id,
-                                "reference_no": ref_no,
-                                "category": category,
-                                "status": "Pending",
-                                "description": description,
-                                "district_action_opinion": "",
-                                "resolution_date": None,
-                                "uploaded_file_url": public_file_url,
-                                "submitted_by_code": st.session_state["current_user"],
-                                "atr_response_file_url": ""
+                                "date": str(issue_date), "jurisdiction": assigned_office,
+                                "complaint_id": comp_id, "reference_no": ref_no,
+                                "category": category, "status": "Pending",
+                                "description": description, "district_action_opinion": "",
+                                "resolution_date": None, "uploaded_file_url": public_file_url,
+                                "submitted_by_code": current_code, "atr_response_file_url": ""
                             }
-                            
                             try:
                                 supabase.table("district_complaints").insert(db_payload).execute()
-                                st.success(f"🚀 Record Synced! Ticket ID **{comp_id}** saved directly to Supabase Database.")
+                                st.success(f"🚀 Record Synced! Ticket **{comp_id}** saved.")
                                 st.balloons()
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"❌ Database Insertion Error: {e}")
-        
+                                st.error(f"❌ Database Error: {e}")
+
+        # ── TAB 2: OFFICE REPORTS & ATR ──
         with tab_report:
-            st.subheader("📋 Historical Ledger & Action Taken Report (ATR)")
-            
+            st.subheader("📋 Historical Ledger & ATR Inspector")
+
             if not df_global.empty and 'Submitted By Code' in df_global.columns:
-                filtered_df = df_global[df_global['Submitted By Code'] == st.session_state["current_user"]]
+                filtered_df = df_global[df_global['Submitted By Code'] == current_code]
                 if filtered_df.empty:
-                    st.info("📂 No past grievances found for this office jurisdiction.")
+                    st.info("📂 No past grievances found for this office.")
                 else:
-                    total_block = len(filtered_df)
-                    pending_block = len(filtered_df[filtered_df['Normalized_Status'] == "Pending"])
-                    prog_block = len(filtered_df[filtered_df['Normalized_Status'] == "In Progress"])
-                    disp_block = len(filtered_df[filtered_df['Normalized_Status'] == "Disposed"])
+                    total_b = len(filtered_df)
+                    pending_b = len(filtered_df[filtered_df['Normalized_Status'] == "Pending"])
+                    prog_b = len(filtered_df[filtered_df['Normalized_Status'] == "In Progress"])
+                    disp_b = len(filtered_df[filtered_df['Normalized_Status'] == "Disposed"])
 
                     kb1, kb2, kb3, kb4 = st.columns(4)
                     with kb1:
-                        st.markdown(f'<div class="metric-card"><div class="metric-title">Total Lodged</div><div class="metric-value">{total_block}</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-card"><span class="metric-icon">📋</span><div class="metric-title">Total Lodged</div><div class="metric-value">{total_b}</div></div>', unsafe_allow_html=True)
                     with kb2:
-                        st.markdown(f'<div class="metric-card pending"><div class="metric-title">Pending</div><div class="metric-value" style="color: #ef4444;">{pending_block}</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-card pending"><span class="metric-icon">🔴</span><div class="metric-title">Pending</div><div class="metric-value" style="color:#ef4444;">{pending_b}</div></div>', unsafe_allow_html=True)
                     with kb3:
-                        st.markdown(f'<div class="metric-card progress"><div class="metric-title">Under Review</div><div class="metric-value" style="color: #f59e0b;">{prog_block}</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-card progress"><span class="metric-icon">🟡</span><div class="metric-title">Under Review</div><div class="metric-value" style="color:#f59e0b;">{prog_b}</div></div>', unsafe_allow_html=True)
                     with kb4:
-                        st.markdown(f'<div class="metric-card disposed"><div class="metric-title">Disposed / ATR Completed</div><div class="metric-value" style="color: #10b981;">{disp_block}</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="metric-card disposed"><span class="metric-icon">🟢</span><div class="metric-title">Disposed</div><div class="metric-value" style="color:#10b981;">{disp_b}</div></div>', unsafe_allow_html=True)
 
                     display_df = filtered_df.copy()
-                    
                     if 'Uploaded File URL' in display_df.columns:
-                        display_df['📎 Complaint File'] = display_df['Uploaded File URL'].apply(
-                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
-                        )
+                        display_df['📎 Complaint'] = display_df['Uploaded File URL'].apply(
+                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
                     if 'ATR Response File URL' in display_df.columns:
-                        display_df['📎 ATR Response'] = display_df['ATR Response File URL'].apply(
-                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
-                        )
+                        display_df['📎 ATR'] = display_df['ATR Response File URL'].apply(
+                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
 
-                    display_cols = [
-                        'Date', 'Complaint ID', 'Reference No', 'Category', 
-                        'Normalized_Status', 'Description', 'District Action/Opinion', 
-                        'Resolution Date', '📎 Complaint File', '📎 ATR Response'
-                    ]
+                    display_cols = ['Date', 'Complaint ID', 'Reference No', 'Category',
+                                    'Normalized_Status', 'Description', 'District Action/Opinion',
+                                    'Resolution Date', '📎 Complaint', '📎 ATR']
                     valid_cols = [c for c in display_cols if c in display_df.columns]
 
-                    st.markdown("#### 📑 Summary Table (Click any row or select below for full wrapped details)")
                     st.dataframe(
                         display_df[valid_cols].rename(columns={"Normalized_Status": "Status"}),
                         column_config={
-                            "📎 Complaint File": st.column_config.LinkColumn("📎 Complaint File", display_text="📄 View"),
-                            "📎 ATR Response": st.column_config.LinkColumn("📎 ATR Response", display_text="📄 View"),
+                            "📎 Complaint": st.column_config.LinkColumn("📎 Complaint", display_text="📄 View"),
+                            "📎 ATR": st.column_config.LinkColumn("📎 ATR", display_text="📄 View"),
                             "Description": st.column_config.TextColumn("Description", width="large"),
-                            "District Action/Opinion": st.column_config.TextColumn("District Action/Opinion", width="large")
+                            "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                         },
-                        hide_index=True,
-                        use_container_width=True
+                        hide_index=True, use_container_width=True
                     )
 
+                    # Export toolbar for block
+                    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+                    exp_c1, exp_c2, exp_c3 = st.columns([5, 2.5, 2.5])
+                    with exp_c1:
+                        st.caption(f"📊 Showing {len(filtered_df)} records")
+                    with exp_c2:
+                        csv_data = filtered_df[['Date','Complaint ID','Reference No','Category','Normalized_Status','Description','District Action/Opinion','Resolution Date']].rename(columns={"Normalized_Status":"Status"}).to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Export CSV", csv_data, f"grievances_{current_code}.csv", "text/csv", use_container_width=True)
+                    with exp_c3:
+                        if FPDF_AVAILABLE:
+                            pdf_data = generate_grievance_pdf(filtered_df, f"Office Report — {assigned_office}")
+                            if pdf_data:
+                                st.download_button("📥 Export PDF", pdf_data, f"grievances_{current_code}.pdf", "application/pdf", use_container_width=True)
+
                     st.markdown("---")
-                    st.markdown("### 🔍 Case Dossier & Official ATR Inspector")
-                    selected_cpl = st.selectbox(
-                        "Select Complaint ID to read full text and print ATR:",
-                        filtered_df['Complaint ID'].unique(),
-                        key="block_dossier_select"
-                    )
+                    st.markdown("### 🔍 Case Dossier Inspector")
+                    selected_cpl = st.selectbox("Select Complaint ID:", filtered_df['Complaint ID'].unique(), key="block_dossier_select")
                     selected_row = filtered_df[filtered_df['Complaint ID'] == selected_cpl].iloc[0]
                     render_dossier_card(selected_row)
             else:
                 st.info("No records to display.")
 
-        # TAB 3: BLOCK MONTHLY ATTENDANCE ENTRY
+        # ── TAB 3: MONTHLY ATTENDANCE ──
         with tab_att:
-            st.subheader(f"📑 Monthly Employee Attendance Entry - {assigned_office}")
-            
+            st.subheader(f"📑 Monthly Attendance — {assigned_office}")
+
             col_m1, col_m2 = st.columns(2)
             with col_m1:
-                selected_month = st.selectbox("Select Month", range(1, 13), index=datetime.now().month - 1)
+                selected_month = st.selectbox("Select Month", range(1, 13),
+                    format_func=lambda m: calendar.month_name[m],
+                    index=datetime.now().month - 1)
             with col_m2:
                 selected_year = st.number_input("Select Year", min_value=2024, max_value=2030, value=datetime.now().year)
 
-            # Fetch employees linked to this office code from user_profiles table
             office_emp_df = pd.DataFrame()
             try:
                 emp_res = supabase.table("user_profiles").select("*").eq("office_name", assigned_office).execute()
@@ -1053,58 +1519,61 @@ else:
                 pass
 
             if office_emp_df.empty:
-                st.warning("⚠️ No registered employees found for this office in user_profiles. Please add employee records first.")
+                st.warning("⚠️ No employees registered for this office. Please add employee records in user_profiles first.")
             else:
-                st.info(f"👥 Found {len(office_emp_df)} employee(s) registered under {assigned_office}.")
-                
+                st.info(f"👥 {len(office_emp_df)} employee(s) registered under {assigned_office}.")
+
                 with st.form("attendance_submission_form"):
-                    st.markdown("#### Staff Attendance Ledger")
+                    st.markdown("#### 📋 Staff Attendance Ledger")
                     for idx, emp_row in office_emp_df.iterrows():
                         e_name = emp_row.get("officer_name", f"Employee {idx+1}")
                         e_desig = emp_row.get("designation", "Staff")
-                        
-                        st.markdown(f"**👤 {e_name}** (`{e_desig}`)")
+                        e_photo = get_profile_photo_url(str(emp_row.get("photo_url", "")))
+
+                        # Employee card with photo
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+                                    background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
+                            <img src="{e_photo}" onerror="this.onerror=null; this.src='{DEFAULT_AVATAR}';"
+                                 style="width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid #cbd5e1;" />
+                            <div>
+                                <div style="font-weight: 700; color: #0f172a; font-size: 15px;">{e_name}</div>
+                                <div style="font-size: 12px; color: #64748b;">{e_desig}</div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
                         c1, c2, c3, c4 = st.columns([2, 2, 2, 3])
                         with c1:
-                            status = st.selectbox(f"Status", ["Present", "Absent", "Leave / CL", "Partial Absent"], key=f"att_stat_{idx}")
+                            st.selectbox("Status", ["Present", "Absent", "Leave / CL", "Partial Absent"], key=f"att_stat_{idx}")
                         with c2:
-                            working_days = st.number_input("Working Days", min_value=1, max_value=31, value=30, key=f"att_work_{idx}")
+                            st.number_input("Working Days", min_value=1, max_value=31, value=30, key=f"att_work_{idx}")
                         with c3:
-                            absent_days = st.number_input("Absent Days", min_value=0, max_value=31, value=0 if status == "Present" else 1, key=f"att_abs_{idx}")
+                            st.number_input("Absent Days", min_value=0, max_value=31, value=0, key=f"att_abs_{idx}")
                         with c4:
-                            remarks = st.text_input("Remarks / Leave Reason", placeholder="Optional remarks", key=f"att_rem_{idx}")
+                            st.text_input("Remarks", placeholder="Optional", key=f"att_rem_{idx}")
                         st.markdown("---")
 
-                    doc_file = st.file_uploader("📎 Attach Signed Attendance Sheet / Absentee Statement (PDF/JPG)", type=["pdf", "jpg", "png"])
-                    
-                    if st.form_submit_button("🚀 Submit Monthly Attendance to HQ", use_container_width=True):
-                        with st.spinner("Processing attendance transmission..."):
+                    doc_file = st.file_uploader("📎 Attach Signed Attendance Sheet (PDF/JPG)", type=["pdf", "jpg", "png"])
+
+                    if st.form_submit_button("🚀 Submit Attendance to HQ", use_container_width=True):
+                        with st.spinner("Processing attendance..."):
                             public_doc_url = ""
                             if doc_file:
                                 public_doc_url = upload_file_to_supabase(doc_file, file_prefix=f"ATT_{current_code}_{selected_month}_{selected_year}")
 
                             success_count = 0
                             for idx, emp_row in office_emp_df.iterrows():
-                                e_name = emp_row.get("officer_name", f"Employee {idx+1}")
-                                e_desig = emp_row.get("designation", "Staff")
-                                
-                                status = st.session_state.get(f"att_stat_{idx}", "Present")
-                                w_days = st.session_state.get(f"att_work_{idx}", 30)
-                                a_days = st.session_state.get(f"att_abs_{idx}", 0)
-                                rem = st.session_state.get(f"att_rem_{idx}", "")
-
                                 payload = {
-                                    "month": selected_month,
-                                    "year": selected_year,
-                                    "office_code": current_code,
-                                    "office_name": assigned_office,
-                                    "employee_name": e_name,
-                                    "designation": e_desig,
-                                    "attendance_status": status,
-                                    "total_working_days": w_days,
-                                    "days_present": w_days - a_days,
-                                    "days_absent": a_days,
-                                    "remarks": rem,
+                                    "month": selected_month, "year": selected_year,
+                                    "office_code": current_code, "office_name": assigned_office,
+                                    "employee_name": emp_row.get("officer_name", f"Employee {idx+1}"),
+                                    "designation": emp_row.get("designation", "Staff"),
+                                    "attendance_status": st.session_state.get(f"att_stat_{idx}", "Present"),
+                                    "total_working_days": st.session_state.get(f"att_work_{idx}", 30),
+                                    "days_present": st.session_state.get(f"att_work_{idx}", 30) - st.session_state.get(f"att_abs_{idx}", 0),
+                                    "days_absent": st.session_state.get(f"att_abs_{idx}", 0),
+                                    "remarks": st.session_state.get(f"att_rem_{idx}", ""),
                                     "supporting_doc_url": public_doc_url,
                                     "submitted_by": current_code
                                 }
@@ -1112,36 +1581,42 @@ else:
                                     success_count += 1
 
                             if success_count > 0:
-                                st.success(f"✅ Attendance for {success_count} employee(s) successfully transmitted for Month {selected_month}/{selected_year}!")
+                                st.success(f"✅ Attendance for {success_count} employee(s) submitted for {calendar.month_name[selected_month]} {selected_year}!")
                                 st.balloons()
 
-    # ------------------------------------------
-    # ROLE B: DISTRICT MONITORING DASHBOARD (DM LEVEL)
-    # ------------------------------------------
+
+    # ====================================================
+    # ROLE B: DISTRICT ADMIN DASHBOARD (DM LEVEL)
+    # ====================================================
     else:
-        st.markdown("### 📊 Command Control Centre & Analytical Panel")
-        
+        st.markdown("### 📊 Command Control Centre — District Administration")
+
         adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5 = st.tabs([
-            "🔍 Live Grievance Explorer", 
-            "📈 Operational Matrix & ATR Charts", 
-            "⚙️ Action Taken Cell (ATR)", 
-            "🛡️ Security Desk (Credential Control)",
+            "🔍 Live Grievance Explorer",
+            "📈 Operational & ATR Analytics",
+            "⚙️ Action Taken Cell (ATR)",
+            "🛡️ Security Desk",
             "📑 Attendance & Payroll Portal"
         ])
-        
+
+        # ── TAB 1: LIVE GRIEVANCE EXPLORER ──
         with adm_tab1:
-            st.subheader("Global Grievance Registry Dashboard")
-            
+            st.subheader("🌐 Global Grievance Registry")
+
             if not df_global.empty:
-                f_col1, f_col2, f_col3 = st.columns(3)
+                # Filters row
+                f_col1, f_col2, f_col3, f_col4 = st.columns(4)
                 with f_col1:
-                    filter_status = st.selectbox("Filter by Execution Status", ["All Statuses", "Pending", "In Progress", "Disposed"])
+                    filter_status = st.selectbox("🔖 Status Filter", ["All Statuses", "Pending", "In Progress", "Disposed"])
                 with f_col2:
                     all_nodes = ["All Jurisdictions"] + sorted(list(df_global['Jurisdiction'].unique()))
-                    filter_node = st.selectbox("Filter by Operational Node", all_nodes)
+                    filter_node = st.selectbox("🏢 Jurisdiction Filter", all_nodes)
                 with f_col3:
                     all_cats = ["All Categories"] + sorted(list(df_global['Category'].unique()))
-                    filter_cat = st.selectbox("Filter by Sector Domain", all_cats)
+                    filter_cat = st.selectbox("📂 Category Filter", all_cats)
+                with f_col4:
+                    date_options = ["All Time", "Last 7 Days", "Last 30 Days", "Last 90 Days"]
+                    filter_date = st.selectbox("📅 Date Range", date_options)
 
                 filtered_global = df_global.copy()
                 if filter_status != "All Statuses":
@@ -1150,206 +1625,497 @@ else:
                     filtered_global = filtered_global[filtered_global['Jurisdiction'] == filter_node]
                 if filter_cat != "All Categories":
                     filtered_global = filtered_global[filtered_global['Category'] == filter_cat]
+                if filter_date != "All Time" and 'Date' in filtered_global.columns:
+                    try:
+                        days_map = {"Last 7 Days": 7, "Last 30 Days": 30, "Last 90 Days": 90}
+                        cutoff = date.today() - timedelta(days=days_map.get(filter_date, 9999))
+                        filtered_global = filtered_global[filtered_global['Date'] >= cutoff]
+                    except Exception:
+                        pass
 
-                filtered_global['📎 Complaint File'] = filtered_global['Uploaded File URL'].apply(
-                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
-                )
-                filtered_global['📎 ATR Response'] = filtered_global['ATR Response File URL'].apply(
-                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
-                )
+                # Summary counts
+                st.markdown(f"""
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
+                    <div style="background:#eff6ff; padding:8px 18px; border-radius:10px; border:1px solid #bfdbfe;">
+                        <span style="font-size:13px; color:#1e40af; font-weight:700;">📋 Total: {len(filtered_global)}</span>
+                    </div>
+                    <div style="background:#fef2f2; padding:8px 18px; border-radius:10px; border:1px solid #fecaca;">
+                        <span style="font-size:13px; color:#991b1b; font-weight:700;">🔴 Pending: {len(filtered_global[filtered_global['Normalized_Status']=='Pending'])}</span>
+                    </div>
+                    <div style="background:#fffbeb; padding:8px 18px; border-radius:10px; border:1px solid #fde68a;">
+                        <span style="font-size:13px; color:#92400e; font-weight:700;">🟡 In Progress: {len(filtered_global[filtered_global['Normalized_Status']=='In Progress'])}</span>
+                    </div>
+                    <div style="background:#f0fdf4; padding:8px 18px; border-radius:10px; border:1px solid #bbf7d0;">
+                        <span style="font-size:13px; color:#166534; font-weight:700;">🟢 Disposed: {len(filtered_global[filtered_global['Normalized_Status']=='Disposed'])}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-                table_cols = [
-                    'Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category', 
-                    'Normalized_Status', 'Description', 'District Action/Opinion', 
-                    'Resolution Date', '📎 Complaint File', '📎 ATR Response'
-                ]
+                # Prepare display columns
+                filtered_global['📎 Complaint'] = filtered_global['Uploaded File URL'].apply(
+                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+                filtered_global['📎 ATR'] = filtered_global['ATR Response File URL'].apply(
+                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+
+                table_cols = ['Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category',
+                              'Normalized_Status', 'Description', 'District Action/Opinion',
+                              'Resolution Date', '📎 Complaint', '📎 ATR']
                 valid_table_cols = [c for c in table_cols if c in filtered_global.columns]
 
                 st.dataframe(
                     filtered_global[valid_table_cols].rename(columns={"Normalized_Status": "Status"}),
                     column_config={
-                        "📎 Complaint File": st.column_config.LinkColumn("📎 Complaint File", display_text="📄 View"),
-                        "📎 ATR Response": st.column_config.LinkColumn("📎 ATR Response", display_text="📄 View"),
+                        "📎 Complaint": st.column_config.LinkColumn("📎 Complaint", display_text="📄 View"),
+                        "📎 ATR": st.column_config.LinkColumn("📎 ATR", display_text="📄 View"),
                         "Description": st.column_config.TextColumn("Description", width="large"),
-                        "District Action/Opinion": st.column_config.TextColumn("District Action/Opinion", width="large")
+                        "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                     },
-                    hide_index=True,
-                    use_container_width=True
+                    hide_index=True, use_container_width=True
                 )
 
-                st.markdown("---")
-                st.markdown("### 🖨️ Detailed Case File & Official ATR Dossier")
-                if not filtered_global.empty:
-                    chosen_case_id = st.selectbox(
-                        "Select Complaint ID for full text inspection and print preparation:", 
-                        filtered_global['Complaint ID'].unique(),
-                        key="admin_dossier_select"
-                    )
-                    chosen_case_row = filtered_global[filtered_global['Complaint ID'] == chosen_case_id].iloc[0]
-                    render_dossier_card(chosen_case_row, is_district=True)
-            else:
-                st.info("Database empty.")
+                # ── EXPORT TOOLBAR (Non-overlapping, dedicated row) ──
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+                exp_c1, exp_c2, exp_c3 = st.columns([5, 2.5, 2.5])
+                with exp_c1:
+                    st.caption(f"📊 {len(filtered_global)} records displayed • Export options →")
+                with exp_c2:
+                    csv_export = filtered_global[['Date','Jurisdiction','Complaint ID','Reference No','Category','Normalized_Status','Description','District Action/Opinion','Resolution Date']].rename(columns={"Normalized_Status":"Status"}).to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Export as CSV", csv_export, "grievance_registry.csv", "text/csv", use_container_width=True, key="csv_export_admin")
+                with exp_c3:
+                    if FPDF_AVAILABLE:
+                        pdf_bytes = generate_grievance_pdf(filtered_global, "Live Grievance Registry — District Level")
+                        if pdf_bytes:
+                            st.download_button("📥 Export as PDF", pdf_bytes, "grievance_registry.pdf", "application/pdf", use_container_width=True, key="pdf_export_admin")
+                    else:
+                        st.caption("Install `fpdf2` for PDF export")
 
+                # ── DOSSIER INSPECTOR ──
+                st.markdown("---")
+                st.markdown("### 🖨️ Case Dossier & ATR Inspector")
+                if not filtered_global.empty:
+                    chosen_id = st.selectbox("Select Complaint ID:", filtered_global['Complaint ID'].unique(), key="admin_dossier_select")
+                    chosen_row = filtered_global[filtered_global['Complaint ID'] == chosen_id].iloc[0]
+                    render_dossier_card(chosen_row, is_district=True)
+            else:
+                st.info("📂 Database empty. No grievances filed yet.")
+
+        # ── TAB 2: ADVANCED OPERATIONAL ANALYTICS ──
         with adm_tab2:
-            st.subheader("Operational Analytics & Redressal Performance")
-            
+            st.subheader("📈 Operational Analytics & Redressal Performance")
+
             if not df_global.empty:
                 total_complaints = len(df_global)
                 pending_count = len(df_global[df_global['Normalized_Status'] == "Pending"])
                 progress_count = len(df_global[df_global['Normalized_Status'] == "In Progress"])
                 disposed_count = len(df_global[df_global['Normalized_Status'] == "Disposed"])
                 disposal_rate = round((disposed_count / total_complaints) * 100, 1) if total_complaints > 0 else 0
+                pendency_rate = round((pending_count / total_complaints) * 100, 1) if total_complaints > 0 else 0
 
+                # ── KPI CARDS ──
                 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
                 with kpi1:
-                    st.markdown(f'<div class="metric-card"><div class="metric-title">Total Cases</div><div class="metric-value">{total_complaints}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-card"><span class="metric-icon">📋</span><div class="metric-title">Total Cases</div><div class="metric-value">{total_complaints}</div></div>', unsafe_allow_html=True)
                 with kpi2:
-                    st.markdown(f'<div class="metric-card pending"><div class="metric-title">Pending</div><div class="metric-value" style="color: #ef4444;">{pending_count}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-card pending"><span class="metric-icon">🔴</span><div class="metric-title">Pending</div><div class="metric-value" style="color:#ef4444;">{pending_count}</div></div>', unsafe_allow_html=True)
                 with kpi3:
-                    st.markdown(f'<div class="metric-card progress"><div class="metric-title">In Progress</div><div class="metric-value" style="color: #f59e0b;">{progress_count}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-card progress"><span class="metric-icon">🟡</span><div class="metric-title">In Progress</div><div class="metric-value" style="color:#f59e0b;">{progress_count}</div></div>', unsafe_allow_html=True)
                 with kpi4:
-                    st.markdown(f'<div class="metric-card disposed"><div class="metric-title">Disposed / ATR</div><div class="metric-value" style="color: #10b981;">{disposed_count}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-card disposed"><span class="metric-icon">🟢</span><div class="metric-title">Disposed</div><div class="metric-value" style="color:#10b981;">{disposed_count}</div></div>', unsafe_allow_html=True)
                 with kpi5:
-                    st.markdown(f'<div class="metric-card"><div class="metric-title">Disposal Rate</div><div class="metric-value" style="color: #1e3a8a;">{disposal_rate}%</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-card rate"><span class="metric-icon">📊</span><div class="metric-title">Disposal Rate</div><div class="metric-value" style="color:#6366f1;">{disposal_rate}%</div></div>', unsafe_allow_html=True)
 
-                st.markdown("---")
+                STATUS_COLOR_MAP = {"Pending": "#ef4444", "In Progress": "#f59e0b", "Disposed": "#10b981"}
 
-                STATUS_COLOR_MAP = {
-                    "Pending": "#ef4444",
-                    "In Progress": "#f59e0b",
-                    "Disposed": "#10b981"
-                }
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
+                # ── ROW 1: Pie Chart + Category Bar ──
                 ch_col1, ch_col2 = st.columns(2)
-                
+
                 with ch_col1:
                     status_counts = df_global['Normalized_Status'].value_counts().reset_index()
                     status_counts.columns = ['Status', 'Count']
                     fig_status = px.pie(
-                        status_counts, 
-                        names='Status', 
-                        values='Count',
-                        title='Overall Redressal Execution Breakdown (Pending vs Disposed)',
-                        hole=0.45,
-                        color='Status',
-                        color_discrete_map=STATUS_COLOR_MAP
+                        status_counts, names='Status', values='Count',
+                        title='Overall Redressal Breakdown (Pending vs Disposed)',
+                        hole=0.48, color='Status', color_discrete_map=STATUS_COLOR_MAP
                     )
-                    fig_status.update_traces(textposition='inside', textinfo='percent+label+value')
-                    fig_status.update_layout(font=dict(size=14))
+                    fig_status.update_traces(textposition='inside', textinfo='percent+label+value',
+                                            textfont_size=13)
+                    fig_status.update_layout(font=dict(size=13), margin=dict(t=50, b=20, l=20, r=20),
+                                            legend=dict(orientation="h", yanchor="bottom", y=-0.15))
                     st.plotly_chart(fig_status, use_container_width=True)
 
                 with ch_col2:
                     cat_counts = df_global['Category'].value_counts().reset_index()
                     cat_counts.columns = ['Category', 'Count']
                     fig_cat = px.bar(
-                        cat_counts,
-                        x='Category',
-                        y='Count',
-                        color='Category',
-                        title='Grievance Volume by Sector Domain (RTPS, Lok Shikayat, etc.)',
-                        text_auto=True
+                        cat_counts, x='Category', y='Count', color='Category',
+                        title='Grievance Volume by Sector Domain', text_auto=True
                     )
-                    fig_cat.update_layout(font=dict(size=14), showlegend=False)
+                    fig_cat.update_layout(font=dict(size=13), showlegend=False,
+                                         margin=dict(t=50, b=20), xaxis_tickangle=-25)
+                    fig_cat.update_traces(textposition='outside')
                     st.plotly_chart(fig_cat, use_container_width=True)
 
-                st.markdown("#### 🏢 Node-wise Performance: Pending vs Disposed Breakdown")
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+                # ── ROW 2: GRIEVANCE TREND + SLA GAUGE (NEW) ──
+                trend_col, gauge_col = st.columns([3, 2])
+
+                with trend_col:
+                    st.markdown('<div class="analytics-section-title">📈 Grievance Filing Trend Over Time</div>', unsafe_allow_html=True)
+                    if 'Date' in df_global.columns:
+                        try:
+                            trend_df = df_global.copy()
+                            trend_df['Date'] = pd.to_datetime(trend_df['Date'], errors='coerce')
+                            trend_df = trend_df.dropna(subset=['Date'])
+                            if not trend_df.empty:
+                                daily_counts = trend_df.groupby(trend_df['Date'].dt.date).size().reset_index(name='Count')
+                                daily_counts.columns = ['Date', 'Count']
+                                daily_counts = daily_counts.sort_values('Date')
+                                fig_trend = px.area(
+                                    daily_counts, x='Date', y='Count',
+                                    title='Daily Grievance Filing Volume',
+                                    color_discrete_sequence=['#3b82f6']
+                                )
+                                fig_trend.update_layout(
+                                    font=dict(size=12), margin=dict(t=50, b=20),
+                                    xaxis_title="Date", yaxis_title="Cases Filed",
+                                    hovermode="x unified"
+                                )
+                                fig_trend.update_traces(fill='tozeroy', line_shape='spline')
+                                st.plotly_chart(fig_trend, use_container_width=True)
+                            else:
+                                st.info("No dated records for trend analysis.")
+                        except Exception:
+                            st.info("Unable to generate trend chart.")
+
+                with gauge_col:
+                    st.markdown('<div class="analytics-section-title">🎯 SLA Compliance & Disposal Gauge</div>', unsafe_allow_html=True)
+                    fig_gauge = go.Figure(go.Indicator(
+                        mode="gauge+number+delta",
+                        value=disposal_rate,
+                        delta={'reference': 75, 'increasing': {'color': '#10b981'}, 'decreasing': {'color': '#ef4444'}},
+                        number={'suffix': '%', 'font': {'size': 42, 'color': '#0f172a'}},
+                        title={'text': 'Disposal Rate vs 75% Target', 'font': {'size': 14, 'color': '#475569'}},
+                        gauge={
+                            'axis': {'range': [0, 100], 'tickwidth': 2},
+                            'bar': {'color': '#1e3a8a', 'thickness': 0.25},
+                            'bgcolor': '#f1f5f9',
+                            'steps': [
+                                {'range': [0, 40], 'color': '#fee2e2'},
+                                {'range': [40, 70], 'color': '#fef3c7'},
+                                {'range': [70, 100], 'color': '#dcfce7'}
+                            ],
+                            'threshold': {'line': {'color': '#ef4444', 'width': 3}, 'thickness': 0.8, 'value': 75}
+                        }
+                    ))
+                    fig_gauge.update_layout(margin=dict(t=60, b=20, l=30, r=30), height=320)
+                    st.plotly_chart(fig_gauge, use_container_width=True)
+
+                    # Pendency Alert
+                    if pendency_rate > 50:
+                        st.error(f"⚠️ HIGH PENDENCY ALERT: {pendency_rate}% cases are still pending!")
+                    elif pendency_rate > 30:
+                        st.warning(f"⚡ Moderate pendency: {pendency_rate}% cases pending.")
+                    else:
+                        st.success(f"✅ Low pendency: {pendency_rate}% — System performing well.")
+
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+                # ── ROW 3: AGING ANALYSIS + RESOLUTION TIME (NEW) ──
+                aging_col, restime_col = st.columns(2)
+
+                with aging_col:
+                    st.markdown('<div class="analytics-section-title">⏱️ Pending Case Aging Analysis</div>', unsafe_allow_html=True)
+                    pending_df = df_global[df_global['Normalized_Status'] == 'Pending'].copy()
+                    if not pending_df.empty and 'Date' in pending_df.columns:
+                        try:
+                            pending_df['Filing_Date'] = pd.to_datetime(pending_df['Date'], errors='coerce')
+                            pending_df = pending_df.dropna(subset=['Filing_Date'])
+                            if not pending_df.empty:
+                                pending_df['Days_Pending'] = (pd.Timestamp.now() - pending_df['Filing_Date']).dt.days
+                                bins = [0, 7, 14, 30, 60, 9999]
+                                labels = ['0-7 Days', '8-14 Days', '15-30 Days', '31-60 Days', '60+ Days']
+                                pending_df['Age_Bucket'] = pd.cut(pending_df['Days_Pending'], bins=bins, labels=labels, right=True)
+                                age_counts = pending_df['Age_Bucket'].value_counts().reindex(labels).fillna(0).reset_index()
+                                age_counts.columns = ['Age Group', 'Count']
+                                colors = ['#10b981', '#22c55e', '#f59e0b', '#f97316', '#ef4444']
+                                fig_aging = px.bar(
+                                    age_counts, x='Age Group', y='Count', text_auto=True,
+                                    title='Pending Cases by Age',
+                                    color='Age Group', color_discrete_sequence=colors
+                                )
+                                fig_aging.update_layout(font=dict(size=12), showlegend=False, margin=dict(t=50, b=20))
+                                st.plotly_chart(fig_aging, use_container_width=True)
+                            else:
+                                st.info("No dated pending cases.")
+                        except Exception:
+                            st.info("Unable to compute aging.")
+                    else:
+                        st.info("No pending cases to analyze.")
+
+                with restime_col:
+                    st.markdown('<div class="analytics-section-title">⚡ Resolution Time Distribution</div>', unsafe_allow_html=True)
+                    disposed_df = df_global[df_global['Normalized_Status'] == 'Disposed'].copy()
+                    if not disposed_df.empty and 'Date' in disposed_df.columns and 'Resolution Date' in disposed_df.columns:
+                        try:
+                            disposed_df['Filing_Date'] = pd.to_datetime(disposed_df['Date'], errors='coerce')
+                            disposed_df['Res_Date'] = pd.to_datetime(disposed_df['Resolution Date'], errors='coerce')
+                            disposed_df = disposed_df.dropna(subset=['Filing_Date', 'Res_Date'])
+                            if not disposed_df.empty:
+                                disposed_df['Days_To_Resolve'] = (disposed_df['Res_Date'] - disposed_df['Filing_Date']).dt.days
+                                disposed_df = disposed_df[disposed_df['Days_To_Resolve'] >= 0]
+                                if not disposed_df.empty:
+                                    avg_days = round(disposed_df['Days_To_Resolve'].mean(), 1)
+                                    median_days = round(disposed_df['Days_To_Resolve'].median(), 1)
+                                    st.markdown(f"""
+                                    <div style="display:flex; gap:16px; margin-bottom:12px;">
+                                        <div style="background:#eff6ff; padding:8px 16px; border-radius:8px; border:1px solid #bfdbfe;">
+                                            <span style="font-size:13px; color:#1e40af; font-weight:700;">Avg: {avg_days} days</span>
+                                        </div>
+                                        <div style="background:#f0fdf4; padding:8px 16px; border-radius:8px; border:1px solid #bbf7d0;">
+                                            <span style="font-size:13px; color:#166534; font-weight:700;">Median: {median_days} days</span>
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+
+                                    fig_hist = px.histogram(
+                                        disposed_df, x='Days_To_Resolve', nbins=15,
+                                        title='Days Taken to Resolve Cases',
+                                        color_discrete_sequence=['#6366f1'],
+                                        labels={'Days_To_Resolve': 'Days to Resolve'}
+                                    )
+                                    fig_hist.update_layout(font=dict(size=12), margin=dict(t=50, b=20),
+                                                          yaxis_title="Number of Cases")
+                                    st.plotly_chart(fig_hist, use_container_width=True)
+                                else:
+                                    st.info("No valid resolution time data.")
+                            else:
+                                st.info("No valid date pairs for resolution time.")
+                        except Exception:
+                            st.info("Unable to compute resolution times.")
+                    else:
+                        st.info("No disposed cases with dates available.")
+
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+                # ── ROW 4: HEATMAP (Jurisdiction × Category) (NEW) ──
+                st.markdown('<div class="analytics-section-title">🗺️ Grievance Intensity Heatmap — Jurisdiction × Sector</div>', unsafe_allow_html=True)
+                try:
+                    heatmap_data = df_global.groupby(['Jurisdiction', 'Category']).size().reset_index(name='Count')
+                    if not heatmap_data.empty:
+                        heatmap_pivot = heatmap_data.pivot_table(index='Jurisdiction', columns='Category', values='Count', fill_value=0)
+                        fig_heatmap = px.imshow(
+                            heatmap_pivot,
+                            text_auto=True,
+                            color_continuous_scale='Blues',
+                            title='Case Volume: Jurisdiction × Sector Domain',
+                            aspect='auto'
+                        )
+                        fig_heatmap.update_layout(
+                            font=dict(size=12), margin=dict(t=50, b=20, l=10),
+                            xaxis_title="Sector Domain", yaxis_title="Jurisdiction",
+                            height=max(350, len(heatmap_pivot) * 32 + 100)
+                        )
+                        st.plotly_chart(fig_heatmap, use_container_width=True)
+                except Exception:
+                    st.info("Unable to generate heatmap.")
+
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+                # ── ROW 5: BLOCK PERFORMANCE MATRIX (IMPROVED) ──
+                st.markdown('<div class="analytics-section-title">🏢 Block & Subdivision Performance Matrix</div>', unsafe_allow_html=True)
                 block_status_df = df_global.groupby(['Jurisdiction', 'Normalized_Status']).size().reset_index(name='Count')
                 fig_block = px.bar(
-                    block_status_df, 
-                    x='Jurisdiction', 
-                    y='Count', 
-                    color='Normalized_Status',
-                    title='Block / Subdivision Performance Matrix (Pending, In Progress & Disposed Cases)',
-                    barmode='group',
-                    color_discrete_map=STATUS_COLOR_MAP,
-                    text_auto=True
+                    block_status_df, x='Jurisdiction', y='Count', color='Normalized_Status',
+                    title='Performance by Jurisdiction (Pending / In Progress / Disposed)',
+                    barmode='group', color_discrete_map=STATUS_COLOR_MAP, text_auto=True
                 )
                 fig_block.update_layout(
-                    xaxis_tickangle=-35, 
-                    font=dict(size=13.5),
-                    legend_title_text='Resolution Status',
-                    height=500
+                    xaxis_tickangle=-35, font=dict(size=13), legend_title_text='Status',
+                    height=500, margin=dict(t=50, b=80),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
+                fig_block.update_traces(textposition='outside')
                 st.plotly_chart(fig_block, use_container_width=True)
 
-            else:
-                st.info("No data available for analytical computation.")
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-        # ACTION TAKEN CELL (ATR) MODULE (UPDATE SUPABASE DB)
+                # ── ROW 6: TOP PERFORMERS LEADERBOARD (NEW) ──
+                perf_col1, perf_col2 = st.columns(2)
+
+                with perf_col1:
+                    st.markdown('<div class="analytics-section-title">🏆 Top Performers — Disposal Rate Leaderboard</div>', unsafe_allow_html=True)
+                    try:
+                        perf_data = df_global.groupby('Jurisdiction').agg(
+                            Total=('Normalized_Status', 'count'),
+                            Disposed=('Normalized_Status', lambda x: (x == 'Disposed').sum())
+                        ).reset_index()
+                        perf_data['Rate'] = round((perf_data['Disposed'] / perf_data['Total']) * 100, 1)
+                        perf_data = perf_data.sort_values('Rate', ascending=False).head(10)
+
+                        fig_perf = px.bar(
+                            perf_data, y='Jurisdiction', x='Rate', orientation='h',
+                            text=perf_data['Rate'].apply(lambda x: f'{x}%'),
+                            color='Rate', color_continuous_scale=['#ef4444', '#f59e0b', '#10b981'],
+                            title='Disposal Rate by Office (%)'
+                        )
+                        fig_perf.update_layout(
+                            font=dict(size=12), showlegend=False,
+                            margin=dict(t=50, b=20, l=10),
+                            yaxis={'categoryorder': 'total ascending'},
+                            xaxis_title='Disposal Rate (%)',
+                            coloraxis_showscale=False
+                        )
+                        fig_perf.update_traces(textposition='outside')
+                        st.plotly_chart(fig_perf, use_container_width=True)
+                    except Exception:
+                        st.info("Unable to compute performance data.")
+
+                with perf_col2:
+                    st.markdown('<div class="analytics-section-title">📊 Monthly Intake vs Disposal Comparison</div>', unsafe_allow_html=True)
+                    try:
+                        monthly_df = df_global.copy()
+                        monthly_df['Date'] = pd.to_datetime(monthly_df['Date'], errors='coerce')
+                        monthly_df = monthly_df.dropna(subset=['Date'])
+                        if not monthly_df.empty:
+                            monthly_df['Month'] = monthly_df['Date'].dt.to_period('M').astype(str)
+                            intake = monthly_df.groupby('Month').size().reset_index(name='Filed')
+                            disposed_m = monthly_df[monthly_df['Normalized_Status'] == 'Disposed'].groupby('Month').size().reset_index(name='Disposed')
+                            monthly_comp = intake.merge(disposed_m, on='Month', how='left').fillna(0)
+                            monthly_comp = monthly_comp.sort_values('Month').tail(12)
+
+                            fig_monthly = go.Figure()
+                            fig_monthly.add_trace(go.Bar(
+                                x=monthly_comp['Month'], y=monthly_comp['Filed'],
+                                name='Filed', marker_color='#3b82f6', text=monthly_comp['Filed'].astype(int),
+                                textposition='outside'
+                            ))
+                            fig_monthly.add_trace(go.Bar(
+                                x=monthly_comp['Month'], y=monthly_comp['Disposed'],
+                                name='Disposed', marker_color='#10b981', text=monthly_comp['Disposed'].astype(int),
+                                textposition='outside'
+                            ))
+                            fig_monthly.update_layout(
+                                title='Monthly: Cases Filed vs Disposed',
+                                barmode='group', font=dict(size=12),
+                                margin=dict(t=50, b=20),
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                                xaxis_title="Month", yaxis_title="Count"
+                            )
+                            st.plotly_chart(fig_monthly, use_container_width=True)
+                        else:
+                            st.info("No monthly data available.")
+                    except Exception:
+                        st.info("Unable to generate monthly comparison.")
+
+            else:
+                st.info("No data available for analytics.")
+
+        # ── TAB 3: ACTION TAKEN CELL (ATR) ──
         with adm_tab3:
-            st.subheader("Issue Evaluation & ATR Insertion Module")
-            
+            st.subheader("⚖️ ATR Evaluation & Directive Module")
+
             if not df_global.empty:
                 case_to_update = st.selectbox(
-                    "Select Target Complaint ID for Operational Audit / ATR Directive", 
+                    "🎯 Select Complaint ID for ATR",
                     df_global['Complaint ID'].unique()
                 )
                 case_row = df_global[df_global['Complaint ID'] == case_to_update].iloc[0]
-                
                 render_dossier_card(case_row, is_district=True)
-                
-                st.markdown("#### ✍ Enter Official District ATR Directive")
+
+                st.markdown("#### ✍ Official ATR Directive Entry")
                 with st.form(key="hq_atr_form"):
                     current_stat = case_row.get('Normalized_Status', 'Pending')
                     status_options = ["Pending", "In Progress", "Disposed"]
                     default_idx = status_options.index(current_stat) if current_stat in status_options else 0
-                    
-                    new_status = st.selectbox("Update Execution Status", status_options, index=default_idx)
+
+                    new_status = st.selectbox("📋 Update Status", status_options, index=default_idx)
                     action_remarks = st.text_area(
-                        "Official Orders / Technical Directives / Action Taken Remarks", 
-                        value=case_row.get('District Action/Opinion', ''),
-                        height=120
+                        "📝 Orders / Directives / ATR Remarks",
+                        value=case_row.get('District Action/Opinion', ''), height=120
                     )
-                    res_date = st.date_input("ATR Resolution Date", value=date.today())
-                    
+                    res_date = st.date_input("📅 Resolution Date", value=date.today())
+
                     st.markdown("---")
-                    st.markdown("**📤 Attach Supporting ATR Directive Document (Optional, PDF / Image)**")
+                    st.markdown("**📤 Attach ATR Document (Optional)**")
                     atr_file = st.file_uploader(
-                        "Upload ATR Response File (Auto-compressed to high-clarity A4 print resolution)", 
-                        type=["pdf", "jpg", "png"],
-                        key="atr_file_upload"
+                        "Upload ATR Response (PDF/Image — Auto-compressed)",
+                        type=["pdf", "jpg", "png"], key="atr_file_upload"
                     )
-                    
-                    if st.form_submit_button("⚖️ Publish ATR Directive to Supabase Database", use_container_width=True):
-                        with st.spinner("Publishing ATR updates to Supabase..."):
+
+                    if st.form_submit_button("⚖️ Publish ATR Directive", use_container_width=True):
+                        with st.spinner("Publishing ATR to Supabase..."):
                             atr_public_url = case_row.get('ATR Response File URL', '')
                             if atr_file is not None:
                                 atr_public_url = upload_file_to_supabase(atr_file, file_prefix=f"ATR_{case_to_update}")
-                            
+
                             update_payload = {
                                 "status": new_status,
                                 "district_action_opinion": action_remarks,
                                 "resolution_date": str(res_date),
                                 "atr_response_file_url": atr_public_url
                             }
-                            
                             try:
                                 supabase.table("district_complaints").update(update_payload).eq("complaint_id", case_to_update).execute()
-                                st.success(f"📝 Directives published! Complaint ID **{case_to_update}** updated in Supabase Database.")
+                                st.success(f"✅ ATR published for **{case_to_update}**!")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"❌ Failed to update ATR in Supabase: {e}")
+                                st.error(f"❌ Update failed: {e}")
             else:
-                st.info("No pending tasks available.")
+                st.info("No cases available.")
 
+        # ── TAB 4: SECURITY DESK ──
         with adm_tab4:
-            st.subheader("🔑 Central Administrative Credentials Desk")
-            target_user = st.selectbox("Select Office Jurisdiction Node to Reset", list(USER_REGISTRY.keys()))
-            if st.button("Reset Selected Office Password to Default (Nawada@123)", use_container_width=True):
-                st.session_state["password_db"][target_user] = "Nawada@123"
-                st.success(f"🔐 Password for office code **{target_user}** successfully reset to `Nawada@123`.")
+            st.subheader("🔑 Central Credentials & Security Desk")
 
-        # TAB 5: DISTRICT ATTENDANCE AUDIT & PAYROLL CELL
+            sec_c1, sec_c2 = st.columns([3, 2])
+            with sec_c1:
+                target_user = st.selectbox("🏢 Select Office Node", list(USER_REGISTRY.keys()))
+                target_info = USER_REGISTRY[target_user]
+                st.markdown(f"""
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px; margin:8px 0;">
+                    <p style="margin:0; font-size:14px;"><b>Office:</b> {target_info['name']}</p>
+                    <p style="margin:4px 0 0 0; font-size:14px;"><b>Role:</b> {target_info['role']} Level</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if st.button("🔄 Reset Password to Default (Nawada@123)", use_container_width=True):
+                    st.session_state["password_db"][target_user] = "Nawada@123"
+                    st.success(f"🔐 Password for **{target_user}** reset to `Nawada@123`.")
+
+            with sec_c2:
+                st.markdown("#### 📋 Registered Office Nodes")
+                office_list = pd.DataFrame([
+                    {"Code": k, "Name": v["name"], "Role": v["role"]}
+                    for k, v in USER_REGISTRY.items()
+                ])
+                st.dataframe(office_list, hide_index=True, use_container_width=True, height=400)
+
+
+        # ── TAB 5: ATTENDANCE & PAYROLL PORTAL (DISTRICT LEVEL) ──
         with adm_tab5:
-            st.subheader("🏢 District Monthly Attendance Audit & Payroll Processing Cell")
-            
+            st.subheader("🏢 District Attendance Audit & Payroll Processing")
+
             ctrl_c1, ctrl_c2, ctrl_c3 = st.columns([2, 2, 3])
             with ctrl_c1:
-                audit_month = st.selectbox("Audit Month", range(1, 13), index=datetime.now().month - 1, key="adm_audit_m")
+                audit_month = st.selectbox("📅 Audit Month", range(1, 13),
+                    format_func=lambda m: calendar.month_name[m],
+                    index=datetime.now().month - 1, key="adm_audit_m")
             with ctrl_c2:
-                audit_year = st.number_input("Audit Year", min_value=2024, max_value=2030, value=datetime.now().year, key="adm_audit_y")
-            
-            # Load all user profiles to map total offices & employees
+                audit_year = st.number_input("📅 Audit Year", min_value=2024, max_value=2030,
+                    value=datetime.now().year, key="adm_audit_y")
+            with ctrl_c3:
+                st.markdown(f"""
+                <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:12px 16px; margin-top:4px;">
+                    <span style="font-size:14px; color:#1e40af; font-weight:600;">
+                        📊 Showing data for: {calendar.month_name[audit_month]} {audit_year}
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Load profiles and attendance
             all_profiles_df = pd.DataFrame()
             try:
                 prof_res = supabase.table("user_profiles").select("*").execute()
@@ -1360,91 +2126,165 @@ else:
 
             att_df = load_monthly_attendance(audit_month, audit_year)
 
-            # REPORT METRICS
-            st.markdown("---")
+            # ── COMPLIANCE METRICS ──
+            st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
             st.markdown("### 📊 Office Submission Compliance Report")
 
             all_registered_offices = set(USER_REGISTRY.keys())
             submitted_offices = set(att_df["office_code"].unique()) if not att_df.empty else set()
             pending_offices = all_registered_offices - submitted_offices
+            compliance_rate = round((len(submitted_offices) / len(all_registered_offices)) * 100, 1) if all_registered_offices else 0
+            total_staff = len(all_profiles_df) if not all_profiles_df.empty else 0
 
-            m1, m2, m3, m4 = st.columns(4)
+            m1, m2, m3, m4, m5 = st.columns(5)
             with m1:
-                st.markdown(f'<div class="metric-card"><div class="metric-title">Total Registered Nodes</div><div class="metric-value">{len(all_registered_offices)}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-card"><span class="metric-icon">🏢</span><div class="metric-title">Total Nodes</div><div class="metric-value">{len(all_registered_offices)}</div></div>', unsafe_allow_html=True)
             with m2:
-                st.markdown(f'<div class="metric-card disposed"><div class="metric-title">Attendance Uploaded</div><div class="metric-value" style="color: #10b981;">{len(submitted_offices)}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-card disposed"><span class="metric-icon">✅</span><div class="metric-title">Uploaded</div><div class="metric-value" style="color:#10b981;">{len(submitted_offices)}</div></div>', unsafe_allow_html=True)
             with m3:
-                st.markdown(f'<div class="metric-card pending"><div class="metric-title">Rest to Upload (Pending)</div><div class="metric-value" style="color: #ef4444;">{len(pending_offices)}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-card pending"><span class="metric-icon">⏳</span><div class="metric-title">Pending Upload</div><div class="metric-value" style="color:#ef4444;">{len(pending_offices)}</div></div>', unsafe_allow_html=True)
             with m4:
-                total_staff_count = len(all_profiles_df) if not all_profiles_df.empty else 0
-                st.markdown(f'<div class="metric-card"><div class="metric-title">Total Staff Mapped</div><div class="metric-value" style="color: #1e3a8a;">{total_staff_count}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-card"><span class="metric-icon">👥</span><div class="metric-title">Total Staff</div><div class="metric-value" style="color:#1e3a8a;">{total_staff}</div></div>', unsafe_allow_html=True)
+            with m5:
+                st.markdown(f'<div class="metric-card rate"><span class="metric-icon">📈</span><div class="metric-title">Compliance</div><div class="metric-value" style="color:#6366f1;">{compliance_rate}%</div></div>', unsafe_allow_html=True)
 
-            # SUBMISSION BREAKDOWN DETAILS
+            # ── SUBMISSION BREAKDOWN ──
             rep_col1, rep_col2 = st.columns(2)
+
             with rep_col1:
-                st.markdown("#### ✅ Submitted Offices & Employee Count")
+                st.markdown("#### ✅ Submitted Offices")
                 if not att_df.empty:
                     summary_sub = att_df.groupby(["office_name", "office_code"]).agg(
-                        Employees_Submitted=('employee_name', 'count'),
-                        Total_Absents=('days_absent', 'sum')
+                        Employees=('employee_name', 'count'),
+                        Total_Absent=('days_absent', 'sum'),
+                        Avg_Present=('days_present', 'mean')
                     ).reset_index()
+                    summary_sub['Avg_Present'] = summary_sub['Avg_Present'].round(1)
                     st.dataframe(summary_sub, use_container_width=True, hide_index=True)
                 else:
-                    st.info("No attendance uploaded yet for this month.")
+                    st.info("No attendance uploaded for this month yet.")
 
             with rep_col2:
-                st.markdown("#### ⏳ Rest to Upload (Pending Offices List)")
+                st.markdown("#### ⏳ Pending Offices")
                 if pending_offices:
                     pending_list = []
-                    for p_code in pending_offices:
+                    for p_code in sorted(pending_offices):
                         o_info = USER_REGISTRY.get(p_code, {})
-                        e_count = len(all_profiles_df[all_profiles_df["user_code"] == p_code]) if not all_profiles_df.empty else "N/A"
+                        e_count = len(all_profiles_df[all_profiles_df["user_code"] == p_code]) if not all_profiles_df.empty else 0
                         pending_list.append({
-                            "Office Code": p_code,
-                            "Office Name": o_info.get("name", "N/A"),
-                            "Mapped Employees": e_count,
-                            "Status": "Pending Upload"
+                            "Code": p_code,
+                            "Office": o_info.get("name", "N/A"),
+                            "Mapped Staff": e_count,
+                            "Status": "⏳ Pending"
                         })
                     st.dataframe(pd.DataFrame(pending_list), use_container_width=True, hide_index=True)
                 else:
-                    st.success("🎉 All offices have successfully uploaded their monthly attendance!")
+                    st.success("🎉 All offices have uploaded attendance!")
 
-            # DOWNLOAD AND PAYROLL DATASET EXPORT
-            st.markdown("---")
-            st.markdown("### 📥 Download Payroll & Absentee Dataset")
+            # ── ATTENDANCE ANALYTICS CHART (NEW) ──
             if not att_df.empty:
-                csv_buffer = att_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label=f"⬇️ Download Month {audit_month}/{audit_year} Full Attendance Sheet (CSV)",
-                    data=csv_buffer,
-                    file_name=f"District_Attendance_Payroll_{audit_month}_{audit_year}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+                att_chart_col1, att_chart_col2 = st.columns(2)
+
+                with att_chart_col1:
+                    st.markdown("#### 📊 Absenteeism by Office")
+                    try:
+                        absent_by_office = att_df.groupby("office_name")["days_absent"].sum().reset_index()
+                        absent_by_office.columns = ["Office", "Total Absent Days"]
+                        absent_by_office = absent_by_office.sort_values("Total Absent Days", ascending=True)
+                        fig_absent = px.bar(
+                            absent_by_office, y="Office", x="Total Absent Days",
+                            orientation='h', text_auto=True,
+                            color_discrete_sequence=['#f97316']
+                        )
+                        fig_absent.update_layout(font=dict(size=12), margin=dict(t=20, b=20, l=10), showlegend=False)
+                        st.plotly_chart(fig_absent, use_container_width=True)
+                    except Exception:
+                        pass
+
+                with att_chart_col2:
+                    st.markdown("#### 📊 Attendance Status Distribution")
+                    try:
+                        status_dist = att_df["attendance_status"].value_counts().reset_index()
+                        status_dist.columns = ["Status", "Count"]
+                        fig_att_status = px.pie(
+                            status_dist, names="Status", values="Count",
+                            hole=0.4, color_discrete_sequence=['#10b981', '#ef4444', '#f59e0b', '#6366f1']
+                        )
+                        fig_att_status.update_traces(textposition='inside', textinfo='percent+label')
+                        fig_att_status.update_layout(font=dict(size=12), margin=dict(t=20, b=20))
+                        st.plotly_chart(fig_att_status, use_container_width=True)
+                    except Exception:
+                        pass
+
+            # ── DOWNLOAD SECTION ──
+            st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+            st.markdown("### 📥 Export Payroll & Attendance Data")
+
+            if not att_df.empty:
+                exp_c1, exp_c2, exp_c3 = st.columns([5, 2.5, 2.5])
+                with exp_c1:
+                    st.caption(f"📋 {len(att_df)} employee records for {calendar.month_name[audit_month]} {audit_year}")
+                with exp_c2:
+                    csv_buffer = att_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "📥 Download CSV",
+                        data=csv_buffer,
+                        file_name=f"Attendance_{audit_month}_{audit_year}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="att_csv_dl"
+                    )
+                with exp_c3:
+                    if FPDF_AVAILABLE:
+                        att_pdf = generate_attendance_pdf(att_df, audit_month, audit_year)
+                        if att_pdf:
+                            st.download_button(
+                                "📥 Download PDF",
+                                data=att_pdf,
+                                file_name=f"Attendance_{audit_month}_{audit_year}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                                key="att_pdf_dl"
+                            )
+
+                # ── DETAILED LEDGER ──
                 st.markdown("#### 📋 Detailed Employee Attendance Ledger")
-                
-                # Sanitize supporting doc URL in attendance df if present
                 display_att_df = att_df.copy()
                 if "supporting_doc_url" in display_att_df.columns:
-                    display_att_df["supporting_doc_url"] = display_att_df["supporting_doc_url"].apply(
-                        lambda x: get_secure_file_url(x) if str(x).startswith("http") else ""
-                    )
+                    display_att_df["📎 Document"] = display_att_df["supporting_doc_url"].apply(
+                        lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+                    show_cols = ["office_name", "employee_name", "designation", "attendance_status",
+                                 "total_working_days", "days_present", "days_absent", "remarks", "📎 Document"]
+                else:
+                    show_cols = ["office_name", "employee_name", "designation", "attendance_status",
+                                 "total_working_days", "days_present", "days_absent", "remarks"]
+
+                valid_show = [c for c in show_cols if c in display_att_df.columns]
+                col_config = {}
+                if "📎 Document" in valid_show:
+                    col_config["📎 Document"] = st.column_config.LinkColumn("📎 Document", display_text="📄 View")
 
                 st.dataframe(
-                    display_att_df[["office_name", "employee_name", "designation", "attendance_status", "days_present", "days_absent", "remarks", "supporting_doc_url"]],
-                    column_config={
-                        "supporting_doc_url": st.column_config.LinkColumn("📎 Signed Document", display_text="View PDF/Sheet")
-                    },
+                    display_att_df[valid_show],
+                    column_config=col_config,
                     use_container_width=True,
                     hide_index=True
                 )
             else:
-                st.warning("No data available to download for the selected month/year.")
+                st.warning("No attendance data available for the selected period.")
 
-# Corporate Footer
+# ============================================================
+# FOOTER
+# ============================================================
 st.markdown("""
     <div class="corporate-footer">
-        Designed & Formulated for Optimization Protocols | District IT Infrastructure Cell, Nawada HQ © 2026
+        <div style="margin-bottom: 6px;">
+            <strong style="color: #1e3a8a;">🏛️ District IT Infrastructure Cell, Nawada HQ</strong>
+        </div>
+        <div>
+            Designed & Formulated for Government Optimization Protocols © 2026 |
+            <span style="color: #94a3b8;">Powered by Supabase & Streamlit</span>
+        </div>
     </div>
 """, unsafe_allow_html=True)
