@@ -806,12 +806,35 @@ def get_user_profile(user_code):
         pass
     return None
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_image_as_base64(url):
+    """Downloads image from URL server-side and returns base64 data URI.
+    This bypasses NIC/BSWAN browser-level firewall blocks because the
+    Streamlit server (on Streamlit Cloud) fetches the image, not the browser.
+    """
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200 and len(resp.content) > 100:
+            content_type = resp.headers.get("content-type", "image/jpeg")
+            if "image" not in content_type:
+                content_type = "image/jpeg"
+            b64 = base64.b64encode(resp.content).decode("utf-8")
+            return f"data:{content_type};base64,{b64}"
+    except Exception:
+        pass
+    return None
+
 def get_profile_photo_url(raw_url):
-    """Returns a working photo URL. Uses signed URL for Supabase storage, inline SVG fallback."""
+    """Returns a base64 data URI for profile photo (works on NIC/BSWAN).
+    The Streamlit server fetches the image and embeds it inline,
+    so the user's browser never contacts Supabase storage directly.
+    """
     if not raw_url or not isinstance(raw_url, str) or not raw_url.strip().startswith("http"):
         return DEFAULT_AVATAR
     url = raw_url.strip()
-    # Generate signed URL if from Supabase storage
+
+    # Step 1: Try to get a signed URL from Supabase storage
+    fetch_url = url
     if supabase and "supabase" in url.lower():
         try:
             filename = url.split("/")[-1].split("?")[0]
@@ -819,10 +842,24 @@ def get_profile_photo_url(raw_url):
             if isinstance(res, dict):
                 signed = res.get('signedUrl') or res.get('signedURL')
                 if signed:
-                    return signed
+                    fetch_url = signed
         except Exception:
             pass
-    return url
+
+    # Step 2: Download server-side and convert to base64 data URI
+    # This is the KEY FIX — browser never contacts Supabase directly
+    data_uri = _fetch_image_as_base64(fetch_url)
+    if data_uri:
+        return data_uri
+
+    # Step 3: If server-side fetch also fails, try original URL as fallback
+    if fetch_url != url:
+        data_uri = _fetch_image_as_base64(url)
+        if data_uri:
+            return data_uri
+
+    # Final fallback: inline SVG avatar
+    return DEFAULT_AVATAR
 
 def upload_attendance_record(payload):
     """Upserts monthly attendance record for an employee."""
