@@ -736,6 +736,101 @@ st.markdown("""
     [data-testid="stForm"] { overflow: visible !important; }
     .element-container { overflow: visible !important; }
 
+    /* ════════════════════════════════════════════════════════════
+       ── CRITICAL FIX: DATAFRAME COLUMN HEADER CONTEXT MENU ──
+       Fixes the overlapping/broken menu when clicking column
+       headers (Sort, Pin, Filter, Auto-resize options)
+       ════════════════════════════════════════════════════════════ */
+
+    /* Ensure dataframe container does NOT clip its own popups */
+    .stDataFrame, [data-testid="stDataFrame"],
+    [data-testid="stDataFrameResizable"] {
+        overflow: visible !important;
+        position: relative !important;
+    }
+    [data-testid="stDataFrame"] > div {
+        overflow: visible !important;
+    }
+
+    /* Column header menu popup (glide-data-grid overlay) */
+    [data-testid="stDataFrame"] [role="menu"],
+    [data-testid="stDataFrame"] [data-testid="stDataFrameColumnMenu"],
+    div[class*="glideDataEditor"] ~ div,
+    .gdg-style, .gdg-overlay,
+    [data-testid="stDataFrame"] [role="dialog"],
+    [data-testid="stDataFrame"] [role="listbox"] {
+        z-index: 999999 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 12px 36px rgba(15, 23, 42, 0.2) !important;
+        padding: 6px !important;
+    }
+
+    /* Column menu items (Sort asc, Sort desc, Pin, Filter, etc.) */
+    [data-testid="stDataFrame"] [role="menuitem"],
+    [data-testid="stDataFrame"] [role="menu"] > div,
+    [data-testid="stDataFrame"] [role="menu"] > div > div,
+    [data-testid="stDataFrame"] [role="option"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        padding: 9px 14px !important;
+        border-radius: 6px !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        white-space: nowrap !important;
+    }
+    [data-testid="stDataFrame"] [role="menuitem"] *,
+    [data-testid="stDataFrame"] [role="menu"] > div *,
+    [data-testid="stDataFrame"] [role="option"] * {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        fill: #475569 !important;
+    }
+
+    /* Hover state for column menu items */
+    [data-testid="stDataFrame"] [role="menuitem"]:hover,
+    [data-testid="stDataFrame"] [role="menu"] > div:hover,
+    [data-testid="stDataFrame"] [role="option"]:hover {
+        background-color: #eff6ff !important;
+        color: #1e3a8a !important;
+        -webkit-text-fill-color: #1e3a8a !important;
+    }
+    [data-testid="stDataFrame"] [role="menuitem"]:hover *,
+    [data-testid="stDataFrame"] [role="option"]:hover * {
+        color: #1e3a8a !important;
+        -webkit-text-fill-color: #1e3a8a !important;
+        fill: #1e3a8a !important;
+    }
+
+    /* Column header tooltip/search inside menu */
+    [data-testid="stDataFrame"] [role="menu"] input {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 8px !important;
+        padding: 8px 12px !important;
+        font-size: 14px !important;
+    }
+
+    /* Ensure the canvas-based grid doesn't block the menu */
+    [data-testid="stDataFrame"] canvas {
+        position: relative !important;
+        z-index: 1 !important;
+    }
+
+    /* The portal/overlay container for glide-data-grid popups */
+    div[id^="portal"], div[id*="gdg-portal"],
+    div[style*="position: fixed"][style*="z-index"] {
+        z-index: 999999 !important;
+    }
+
     /* ── FIX: EXPANDER TEXT ── */
     .streamlit-expanderHeader p {
         font-size: 15px !important;
