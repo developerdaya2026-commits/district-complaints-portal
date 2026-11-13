@@ -53,7 +53,8 @@ st.markdown("""
     /* Works on NIC, BSWAN, private LAN, any restricted network */
 
     /* ── BASE RESET & TYPOGRAPHY ── */
-    *, *::before, *::after {
+    /* Exclude icon elements so Glide Data Grid and Streamlit icons render properly */
+    body, p, span:not([class*="material"]), label, input, textarea, select, button {
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Noto Sans', 'Liberation Sans', Arial, sans-serif !important;
     }
     .stApp {
@@ -411,8 +412,9 @@ st.markdown("""
     div[data-baseweb="popover"] {
         z-index: 999999 !important;
     }
-    div[data-baseweb="menu"],
-    ul[role="listbox"] {
+    .stSelectbox div[data-baseweb="menu"],
+    .stMultiSelect div[data-baseweb="menu"],
+    div[data-baseweb="select"] ul[role="listbox"] {
         background-color: #ffffff !important;
         border: 1.5px solid #cbd5e1 !important;
         border-radius: 12px !important;
@@ -423,9 +425,9 @@ st.markdown("""
         padding: 4px !important;
     }
 
-    /* Each option in dropdown */
-    li[role="option"],
-    div[role="option"] {
+    /* Each option in standard selectbox dropdowns */
+    div[data-baseweb="select"] li[role="option"],
+    div[data-baseweb="select"] div[role="option"] {
         background-color: #ffffff !important;
         color: #0f172a !important;
         -webkit-text-fill-color: #0f172a !important;
@@ -436,36 +438,35 @@ st.markdown("""
         margin: 2px 0 !important;
         cursor: pointer !important;
     }
-    li[role="option"] *,
-    div[role="option"] * {
+    div[data-baseweb="select"] li[role="option"] *,
+    div[data-baseweb="select"] div[role="option"] * {
         color: #0f172a !important;
         -webkit-text-fill-color: #0f172a !important;
         font-size: 15px !important;
-        background-color: transparent !important;
     }
 
-    /* Hovered option */
-    li[role="option"]:hover,
-    div[role="option"]:hover {
+    /* Hovered option in selectboxes */
+    div[data-baseweb="select"] li[role="option"]:hover,
+    div[data-baseweb="select"] div[role="option"]:hover {
         background-color: #eff6ff !important;
         color: #1e3a8a !important;
         -webkit-text-fill-color: #1e3a8a !important;
     }
-    li[role="option"]:hover *,
-    div[role="option"]:hover * {
+    div[data-baseweb="select"] li[role="option"]:hover *,
+    div[data-baseweb="select"] div[role="option"]:hover * {
         color: #1e3a8a !important;
         -webkit-text-fill-color: #1e3a8a !important;
     }
 
     /* Selected/highlighted option */
-    li[role="option"][aria-selected="true"],
-    div[role="option"][aria-selected="true"] {
+    div[data-baseweb="select"] li[role="option"][aria-selected="true"],
+    div[data-baseweb="select"] div[role="option"][aria-selected="true"] {
         background-color: #1e3a8a !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
-    li[role="option"][aria-selected="true"] *,
-    div[role="option"][aria-selected="true"] * {
+    div[data-baseweb="select"] li[role="option"][aria-selected="true"] *,
+    div[data-baseweb="select"] div[role="option"][aria-selected="true"] * {
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
@@ -719,37 +720,45 @@ st.markdown("""
 
     /* ════════════════════════════════════════════════════════════
        ── FIX: DATAFRAME COLUMN HEADER THREE-DOT MENU ──
-       SAFE approach — only targets the popup portal, NOT the
-       grid's internal canvas, headers, or structure.
+       Explicit styling for the Glide Data Grid column context menu
        ════════════════════════════════════════════════════════════ */
 
-    /* The toolbar that appears on hover over the dataframe */
-    [data-testid="stElementToolbar"] {
-        z-index: 99 !important;
+    /* Ensure popover container is top-level and opaque */
+    div[data-baseweb="popover"],
+    div[data-baseweb="popover"] > div {
+        z-index: 9999999 !important;
+        background-color: transparent !important;
     }
 
-    /* Streamlit wraps the dataframe — ensure it doesn't clip popups */
-    [data-testid="stDataFrameResizable"],
-    [data-testid="stDataFrame"] > div:first-child {
-        overflow: visible !important;
-    }
-
-    /* The three-dot column menu is rendered in a fixed-position
-       portal div at the document root. Target it safely. */
-    div[data-baseweb="popover"][role="tooltip"],
-    div[data-baseweb="popover"] {
-        z-index: 999999 !important;
-    }
-
-    /* The actual menu list inside the popover */
+    /* Style the context menu popup specifically */
     div[data-baseweb="popover"] ul,
-    div[data-baseweb="popover"] [role="listbox"],
     div[data-baseweb="popover"] [role="menu"] {
         background-color: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
-        border-radius: 10px !important;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18) !important;
-        z-index: 999999 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+        padding: 6px !important;
+        min-width: 180px !important;
+        opacity: 1 !important;
+    }
+
+    div[data-baseweb="popover"] [role="menuitem"],
+    div[data-baseweb="popover"] li {
+        background-color: #ffffff !important;
+        color: #1e293b !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        padding: 8px 12px !important;
+        border-radius: 6px !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+    }
+
+    div[data-baseweb="popover"] [role="menuitem"]:hover,
+    div[data-baseweb="popover"] li:hover {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
     }
 
     /* ── FIX: EXPANDER TEXT ── */
