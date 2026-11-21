@@ -53,8 +53,9 @@ st.markdown("""
     /* Works on NIC, BSWAN, private LAN, any restricted network */
 
     /* ── BASE RESET & TYPOGRAPHY ── */
-    /* Exclude icon elements so Glide Data Grid and Streamlit icons render properly */
-    body, p, span:not([class*="material"]), label, input, textarea, select, button {
+    /* Exclude icon elements, glide-data-grid, and popovers so Glide Data Grid icons and context menus render properly */
+    body, p, label, input, textarea, select, button,
+    span:not([class*="material"]):not([class*="glide"]):not([data-baseweb*="popover"]) {
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Noto Sans', 'Liberation Sans', Arial, sans-serif !important;
     }
     .stApp {
@@ -738,7 +739,7 @@ st.markdown("""
         border-radius: 8px !important;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
         padding: 6px !important;
-        min-width: 180px !important;
+        min-width: 200px !important;
         opacity: 1 !important;
     }
 
@@ -751,14 +752,28 @@ st.markdown("""
         padding: 8px 12px !important;
         border-radius: 6px !important;
         display: flex !important;
+        flex-direction: row !important;
         align-items: center !important;
-        gap: 8px !important;
+        gap: 12px !important;
+        white-space: nowrap !important;
     }
 
     div[data-baseweb="popover"] [role="menuitem"]:hover,
     div[data-baseweb="popover"] li:hover {
         background-color: #f1f5f9 !important;
         color: #0f172a !important;
+    }
+
+    /* Glide data grid column menu specific icons and text separation */
+    div[data-baseweb="popover"] [role="menuitem"] span,
+    div[data-baseweb="popover"] li span {
+        display: inline-block !important;
+    }
+    
+    div[data-baseweb="popover"] [role="menuitem"] span:first-child,
+    div[data-baseweb="popover"] li span:first-child {
+        min-width: 20px !important;
+        text-align: center !important;
     }
 
     /* ── FIX: EXPANDER TEXT ── */
@@ -899,6 +914,19 @@ def upload_attendance_record(payload):
         st.error(f"Failed to submit attendance: {e}")
         return False
 
+def add_executive_profile(payload):
+    """Inserts or updates an employee/executive profile in user_profiles."""
+    if supabase is None:
+        return False
+    try:
+        supabase.table("user_profiles").upsert(
+            payload, on_conflict="user_code"
+        ).execute()
+        return True
+    except Exception as e:
+        st.error(f"Failed to add/update executive: {e}")
+        return False
+
 def load_monthly_attendance(month, year):
     """Fetches attendance records for all offices for a specific month/year."""
     if supabase is None:
@@ -975,7 +1003,9 @@ def render_file_action_button(file_url, btn_label="📄 View / Download", key_id
     )
 
 def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
-    """Uploads file to Supabase Storage with clean naming."""
+    """Uploads file to Supabase Storage with clean naming.
+    Ensures bucket exists and handles storage errors gracefully.
+    """
     if uploaded_file is None or supabase is None:
         return ""
     try:
@@ -983,13 +1013,28 @@ def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
         ext = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "pdf"
         file_name = f"{file_prefix}_{int(datetime.now().timestamp())}.{ext}"
         bucket_name = "complaint-documents"
-        supabase.storage.from_(bucket_name).upload(
+        
+        # Perform upload
+        res = supabase.storage.from_(bucket_name).upload(
             file_name, file_bytes,
             file_options={"content-type": file_type, "x-upsert": "true"}
         )
         return supabase.storage.from_(bucket_name).get_public_url(file_name)
     except Exception as e:
-        st.error(f"Error uploading file: {e}")
+        err_msg = str(e)
+        if "row-level security" in err_msg.lower() or "403" in err_msg or "unauthorized" in err_msg.lower():
+            st.error(
+                "❌ **Supabase Storage Permission Error (RLS Violation):**\n\n"
+                "The storage bucket `'complaint-documents'` has Row-Level Security (RLS) active without an **INSERT** policy for public/anon users.\n\n"
+                "👉 **How to fix in 1 minute in Supabase Dashboard:**\n"
+                "1. Go to your Supabase project -> **Storage** -> **Policies** (or click on `'complaint-documents'` bucket configuration).\n"
+                "2. Click **New Policy** -> Choose **For full customization** (or select template *'Enable read/write access to all users'*).\n"
+                "3. Set Allowed Operations to: **SELECT, INSERT, UPDATE**.\n"
+                "4. Set Target Roles to: `anon`, `authenticated` (or `public`).\n"
+                "5. Save policy. Uploads will immediately work without error!"
+            )
+        else:
+            st.error(f"Error uploading file to storage: {e}")
         return ""
 
 # ============================================================
@@ -1572,6 +1617,39 @@ else:
             with col_m2:
                 selected_year = st.number_input("Select Year", min_value=2024, max_value=2030, value=datetime.now().year)
 
+            # Executive Registration Section
+            with st.expander("➕ Register / Update Executive / Employee for this Office", expanded=False):
+                st.markdown("##### Add New Employee / Executive to this Office")
+                with st.form("add_executive_form", clear_on_submit=True):
+                    ea_col1, ea_col2 = st.columns(2)
+                    with ea_col1:
+                        new_emp_name = st.text_input("Executive Full Name *", placeholder="e.g. Ramesh Kumar")
+                        new_emp_desig = st.text_input("Designation *", placeholder="e.g. Executive Assistant / Panchayat Secretary")
+                        new_emp_epf = st.text_input("EPF Number / ID", placeholder="Optional EPF or Staff ID")
+                    with ea_col2:
+                        new_emp_code = st.text_input("Unique Employee Code *", placeholder=f"e.g. {current_code}-EMP{int(datetime.now().timestamp())%10000}")
+                        new_emp_photo = st.file_uploader("Upload Passport Photo (Optional)", type=["jpg", "png", "jpeg"], key="exec_photo_upload")
+                    
+                    if st.form_submit_button("💾 Save Executive to Office Ledger", use_container_width=True):
+                        if not new_emp_name.strip() or not new_emp_desig.strip() or not new_emp_code.strip():
+                            st.error("Please enter Employee Name, Designation, and Employee Code.")
+                        else:
+                            photo_up_url = ""
+                            if new_emp_photo:
+                                photo_up_url = upload_file_to_supabase(new_emp_photo, file_prefix=f"PROF_{new_emp_code.strip()}")
+                            
+                            exec_payload = {
+                                "user_code": new_emp_code.strip(),
+                                "officer_name": new_emp_name.strip(),
+                                "designation": new_emp_desig.strip(),
+                                "office_name": assigned_office,
+                                "epf_no": new_emp_epf.strip() if new_emp_epf else "N/A",
+                                "photo_url": photo_up_url
+                            }
+                            if add_executive_profile(exec_payload):
+                                st.success(f"✅ Executive **{new_emp_name}** successfully enrolled under {assigned_office}!")
+                                st.rerun()
+
             office_emp_df = pd.DataFrame()
             try:
                 emp_res = supabase.table("user_profiles").select("*").eq("office_name", assigned_office).execute()
@@ -1581,12 +1659,22 @@ else:
                 pass
 
             if office_emp_df.empty:
-                st.warning("⚠️ No employees registered for this office. Please add employee records in user_profiles first.")
+                st.warning("⚠️ No employees registered for this office yet. Use the **'➕ Register / Update Executive'** section above to add employees.")
             else:
                 st.info(f"👥 {len(office_emp_df)} employee(s) registered under {assigned_office}.")
 
+                # Bulk Submission & Quick Actions
+                st.markdown("##### ⚡ Quick Bulk Actions")
+                bulk_c1, bulk_c2, bulk_c3 = st.columns([2, 2, 3])
+                with bulk_c1:
+                    default_status_bulk = st.selectbox("Set All Status To", ["Present", "Absent", "Leave / CL"], key="bulk_stat_sel")
+                with bulk_c2:
+                    default_working_days = st.number_input("Default Working Days", min_value=1, max_value=31, value=30, key="bulk_work_days")
+                with bulk_c3:
+                    st.caption("Tip: You can customize individual rows below or submit for all employees at once.")
+
                 with st.form("attendance_submission_form"):
-                    st.markdown("#### 📋 Staff Attendance Ledger")
+                    st.markdown("#### 📋 Staff Attendance & Absenty Ledger")
                     for idx, emp_row in office_emp_df.iterrows():
                         e_name = emp_row.get("officer_name", f"Employee {idx+1}")
                         e_desig = emp_row.get("designation", "Staff")
@@ -1607,34 +1695,39 @@ else:
 
                         c1, c2, c3, c4 = st.columns([2, 2, 2, 3])
                         with c1:
-                            st.selectbox("Status", ["Present", "Absent", "Leave / CL", "Partial Absent"], key=f"att_stat_{idx}")
+                            stat_opts = ["Present", "Absent", "Leave / CL", "Partial Absent"]
+                            def_idx = stat_opts.index(default_status_bulk) if default_status_bulk in stat_opts else 0
+                            st.selectbox("Status", stat_opts, index=def_idx, key=f"att_stat_{idx}")
                         with c2:
-                            st.number_input("Working Days", min_value=1, max_value=31, value=30, key=f"att_work_{idx}")
+                            st.number_input("Working Days", min_value=1, max_value=31, value=int(default_working_days), key=f"att_work_{idx}")
                         with c3:
-                            st.number_input("Absent Days", min_value=0, max_value=31, value=0, key=f"att_abs_{idx}")
+                            initial_absent = 0 if default_status_bulk == "Present" else (int(default_working_days) if default_status_bulk == "Absent" else 1)
+                            st.number_input("Absent Days", min_value=0, max_value=31, value=initial_absent, key=f"att_abs_{idx}")
                         with c4:
-                            st.text_input("Remarks", placeholder="Optional", key=f"att_rem_{idx}")
+                            st.text_input("Remarks / Reason", placeholder="Leave / Absenty details", key=f"att_rem_{idx}")
                         st.markdown("---")
 
-                    doc_file = st.file_uploader("📎 Attach Signed Attendance Sheet (PDF/JPG)", type=["pdf", "jpg", "png"])
+                    doc_file = st.file_uploader("📎 Attach Signed Attendance / Absenty Sheet (PDF/JPG) - Mandatory for HQ Verification", type=["pdf", "jpg", "png"])
 
-                    if st.form_submit_button("🚀 Submit Attendance to HQ", use_container_width=True):
-                        with st.spinner("Processing attendance..."):
+                    if st.form_submit_button("🚀 Submit Bulk Attendance to District HQ", use_container_width=True):
+                        with st.spinner("Processing bulk attendance transmission..."):
                             public_doc_url = ""
                             if doc_file:
                                 public_doc_url = upload_file_to_supabase(doc_file, file_prefix=f"ATT_{current_code}_{selected_month}_{selected_year}")
 
                             success_count = 0
                             for idx, emp_row in office_emp_df.iterrows():
+                                w_days = int(st.session_state.get(f"att_work_{idx}", default_working_days))
+                                a_days = int(st.session_state.get(f"att_abs_{idx}", 0))
                                 payload = {
                                     "month": selected_month, "year": selected_year,
                                     "office_code": current_code, "office_name": assigned_office,
                                     "employee_name": emp_row.get("officer_name", f"Employee {idx+1}"),
                                     "designation": emp_row.get("designation", "Staff"),
                                     "attendance_status": st.session_state.get(f"att_stat_{idx}", "Present"),
-                                    "total_working_days": st.session_state.get(f"att_work_{idx}", 30),
-                                    "days_present": st.session_state.get(f"att_work_{idx}", 30) - st.session_state.get(f"att_abs_{idx}", 0),
-                                    "days_absent": st.session_state.get(f"att_abs_{idx}", 0),
+                                    "total_working_days": w_days,
+                                    "days_present": max(0, w_days - a_days),
+                                    "days_absent": a_days,
                                     "remarks": st.session_state.get(f"att_rem_{idx}", ""),
                                     "supporting_doc_url": public_doc_url,
                                     "submitted_by": current_code
@@ -1643,7 +1736,7 @@ else:
                                     success_count += 1
 
                             if success_count > 0:
-                                st.success(f"✅ Attendance for {success_count} employee(s) submitted for {calendar.month_name[selected_month]} {selected_year}!")
+                                st.success(f"✅ Attendance & Absenty for all {success_count} employee(s) submitted for {calendar.month_name[selected_month]} {selected_year}!")
                                 st.balloons()
 
 
@@ -2311,8 +2404,16 @@ else:
                             )
 
                 # ── DETAILED LEDGER ──
-                st.markdown("#### 📋 Detailed Employee Attendance Ledger")
+                st.markdown("#### 📋 Detailed Employee Attendance Ledger & Document Downloads")
+
+                # Filter by office option for targeted review
+                all_att_offices = ["All Offices"] + sorted(list(att_df["office_name"].unique()))
+                selected_att_office = st.selectbox("Filter Ledger by Office", all_att_offices, key="adm_att_off_filter")
+
                 display_att_df = att_df.copy()
+                if selected_att_office != "All Offices":
+                    display_att_df = display_att_df[display_att_df["office_name"] == selected_att_office]
+
                 if "supporting_doc_url" in display_att_df.columns:
                     display_att_df["📎 Document"] = display_att_df["supporting_doc_url"].apply(
                         lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
@@ -2325,7 +2426,7 @@ else:
                 valid_show = [c for c in show_cols if c in display_att_df.columns]
                 col_config = {}
                 if "📎 Document" in valid_show:
-                    col_config["📎 Document"] = st.column_config.LinkColumn("📎 Document", display_text="📄 View")
+                    col_config["📎 Document"] = st.column_config.LinkColumn("📎 Document", display_text="📄 View Document")
 
                 st.dataframe(
                     display_att_df[valid_show],
@@ -2333,6 +2434,19 @@ else:
                     use_container_width=True,
                     hide_index=True
                 )
+
+                # Quick Direct Signed Document Download Links for Admin
+                if "supporting_doc_url" in display_att_df.columns:
+                    docs_available = display_att_df[display_att_df["supporting_doc_url"].str.strip() != ""]
+                    if not docs_available.empty:
+                        with st.expander("📎 Download Signed Office Attendance Sheets / Statements", expanded=True):
+                            unique_docs = docs_available[["office_name", "supporting_doc_url"]].drop_duplicates()
+                            st.write(f"Found **{len(unique_docs)}** office attendance statement file(s) for this month:")
+                            for _, doc_row in unique_docs.iterrows():
+                                o_name = doc_row["office_name"]
+                                d_url = doc_row["supporting_doc_url"]
+                                s_url = get_secure_file_url(d_url)
+                                st.markdown(f"- 🏢 **{o_name}**: [📄 Open / Download Signed Sheet]({s_url})")
             else:
                 st.warning("No attendance data available for the selected period.")
 
