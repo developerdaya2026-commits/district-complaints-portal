@@ -975,6 +975,62 @@ def add_executive_profile(payload):
             st.error(f"Failed to add/update executive: {e}")
         return False
 
+def bulk_upsert_employees(records):
+    """Upserts multiple employee records into user_profiles table in batches."""
+    if supabase is None or not records:
+        return 0, "Database connection not available or no records provided."
+    total_upserted = 0
+    batch_size = 50
+    try:
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            res = supabase.table("user_profiles").upsert(batch, on_conflict="user_code").execute()
+            if res.data:
+                total_upserted += len(res.data)
+            else:
+                total_upserted += len(batch)
+        return total_upserted, None
+    except Exception as e:
+        err_msg = str(e)
+        if "row-level security" in err_msg.lower() or "403" in err_msg or "unauthorized" in err_msg.lower():
+            return total_upserted, "Supabase Table Permission Error (RLS): The user_profiles table requires an INSERT/UPDATE policy for public/anon in Supabase Dashboard."
+        return total_upserted, err_msg
+
+def delete_employee_profile(user_code):
+    """Deletes an employee record from user_profiles."""
+    if supabase is None or not user_code:
+        return False, "Database not available"
+    try:
+        res = supabase.table("user_profiles").delete().eq("user_code", user_code).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def generate_sample_employee_csv():
+    """Generates sample CSV data containing standard columns and example rows for all offices."""
+    sample_rows = [
+        {"office_name": "Nawada Sadar Block", "user_code": "BLK-NW-SADAR-EMP01", "officer_name": "Rajnish Kumar", "designation": "Executive Assistant", "epf_no": "101441508275", "role": "Block"},
+        {"office_name": "Meskaur Block", "user_code": "BLK-MESKAUR-EMP01", "officer_name": "Ramesh Kumar", "designation": "Executive Assistant", "epf_no": "101441508206", "role": "Block"},
+        {"office_name": "Hisua Block", "user_code": "BLK-HISUA-EMP01", "officer_name": "Amit Sharma", "designation": "IT Assistant", "epf_no": "101441508207", "role": "Block"},
+        {"office_name": "Rajauli Block", "user_code": "BLK-RAJAULI-EMP01", "officer_name": "Sunil Kumar", "designation": "Panchayat Secretary", "epf_no": "101441508208", "role": "Block"},
+        {"office_name": "Pakribarawan Block", "user_code": "BLK-PAKRIBARAWAN-EMP01", "officer_name": "Manoj Verma", "designation": "Executive Assistant", "epf_no": "101441508209", "role": "Block"},
+        {"office_name": "Akbarpur Block", "user_code": "BLK-AKBARPUR-EMP01", "officer_name": "Prakash Jha", "designation": "Executive Assistant", "epf_no": "101441508210", "role": "Block"},
+        {"office_name": "Kashichak Block", "user_code": "BLK-KASHICHAK-EMP01", "officer_name": "Vikas Singh", "designation": "IT Assistant", "epf_no": "101441508211", "role": "Block"},
+        {"office_name": "Warisaliganj Block", "user_code": "BLK-WARISALIGANJ-EMP01", "officer_name": "Sanjay Kumar", "designation": "Executive Assistant", "epf_no": "101441508212", "role": "Block"},
+        {"office_name": "Kowakole Block", "user_code": "BLK-KOWAKOLE-EMP01", "officer_name": "Deepak Paswan", "designation": "Executive Assistant", "epf_no": "101441508213", "role": "Block"},
+        {"office_name": "Roh Block", "user_code": "BLK-ROH-EMP01", "officer_name": "Anil Prasad", "designation": "Executive Assistant", "epf_no": "101441508214", "role": "Block"},
+        {"office_name": "Narhat Block", "user_code": "BLK-NARHAT-EMP01", "officer_name": "Mukesh Yadav", "designation": "Executive Assistant", "epf_no": "101441508215", "role": "Block"},
+        {"office_name": "Sirdala Block", "user_code": "BLK-SIRDALA-EMP01", "officer_name": "Santosh Kumar", "designation": "IT Assistant", "epf_no": "101441508216", "role": "Block"},
+        {"office_name": "Govindpur Block", "user_code": "BLK-GOVINDPUR-EMP01", "officer_name": "Pooja Kumari", "designation": "Executive Assistant", "epf_no": "101441508217", "role": "Block"},
+        {"office_name": "Nardiganj Block", "user_code": "BLK-NARDIGANJ-EMP01", "officer_name": "Gautam Kumar", "designation": "Executive Assistant", "epf_no": "101441508218", "role": "Block"},
+        {"office_name": "Sadar Subdivision Office (Nawada)", "user_code": "OFF-SADAR-SDO-EMP01", "officer_name": "Arun Mishra", "designation": "Executive Assistant", "epf_no": "101441508219", "role": "Block"},
+        {"office_name": "Rajauli Subdivision Office", "user_code": "OFF-RAJAULI-SDO-EMP01", "officer_name": "Kishore Lal", "designation": "Executive Assistant", "epf_no": "101441508220", "role": "Block"},
+        {"office_name": "DM RTPS Cell (Nawada HQ)", "user_code": "OFF-DM-RTPS-EMP01", "officer_name": "Neeraj Pandey", "designation": "Executive Assistant", "epf_no": "101441508221", "role": "Block"},
+        {"office_name": "SP Office (Nawada HQ)", "user_code": "OFF-SP-HQ-EMP01", "officer_name": "Ravi Shankar", "designation": "IT Assistant", "epf_no": "101441508222", "role": "Block"}
+    ]
+    df = pd.DataFrame(sample_rows)
+    return df.to_csv(index=False).encode('utf-8')
+
 def get_office_employees(office_code, office_display_name):
     """Fetches all employees belonging to an office by matching either user_code prefix or office_name variations."""
     if supabase is None:
@@ -986,16 +1042,22 @@ def get_office_employees(office_code, office_display_name):
             return pd.DataFrame()
         df = pd.DataFrame(res.data)
         
-        # Match by office_code prefix (e.g. BLK-MESKAUR matches BLK-MESKAUR and BLK-MESKAUR-EMP...)
-        # or exact user_code match, or office_name substring
+        # Match by office_code prefix or exact user_code match, or office_name substring
         clean_code = str(office_code).strip()
+        clean_code_norm = clean_code.replace("-", "").replace("_", "").replace(" ", "").lower()
         clean_name = str(office_display_name).strip().lower().replace(" block", "").replace(" subdivision office", "").replace(" office", "").strip()
         
         def is_match(row):
             uc = str(row.get("user_code", "")).strip()
             on = str(row.get("office_name", "")).strip().lower()
-            if uc == clean_code or uc.startswith(f"{clean_code}-") or uc.startswith(f"{clean_code}_"):
+            uc_norm = uc.replace("-", "").replace("_", "").replace(" ", "").lower()
+            
+            # Code matches: exact, prefix with separator, or normalized inclusion
+            if uc == clean_code or uc.startswith(f"{clean_code}-") or uc.startswith(f"{clean_code}_") or uc.startswith(f"{clean_code} "):
                 return True
+            if clean_code_norm and (clean_code_norm in uc_norm or uc_norm.startswith(clean_code_norm)):
+                return True
+            # Office name match
             if clean_name and (clean_name in on or on in clean_name):
                 return True
             return False
@@ -1758,16 +1820,25 @@ else:
 
                         # Employee card with photo
                         st.markdown(f"""
-                        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px;
                                     background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
-                            <img src="{e_photo}" onerror="this.onerror=null; this.src='{DEFAULT_AVATAR}';"
-                                 style="width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid #cbd5e1;" />
-                            <div>
-                                <div style="font-weight: 700; color: #0f172a; font-size: 15px;">{e_name}</div>
-                                <div style="font-size: 12px; color: #64748b;">{e_desig}</div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <img src="{e_photo}" onerror="this.onerror=null; this.src='{DEFAULT_AVATAR}';"
+                                     style="width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid #cbd5e1;" />
+                                <div>
+                                    <div style="font-weight: 700; color: #0f172a; font-size: 15px;">{e_name}</div>
+                                    <div style="font-size: 12px; color: #64748b;">{e_desig} &nbsp;|&nbsp; <span style="color:#2563eb;">Code: {emp_row.get('user_code', '')}</span></div>
+                                </div>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
+
+                        st.checkbox(
+                            f"☑️ **Submit Absenty for {e_name}** *(Uncheck if on leave / transferred / not submitting this month)*",
+                            value=True,
+                            key=f"att_inc_{idx}",
+                            help="Uncheck if this employee is on leave, deputation, or did not submit absenty this month."
+                        )
 
                         c1, c2, c3, c4 = st.columns([2, 2, 2, 3])
                         with c1:
@@ -1792,13 +1863,20 @@ else:
                                 public_doc_url = upload_file_to_supabase(doc_file, file_prefix=f"ATT_{current_code}_{selected_month}_{selected_year}")
 
                             success_count = 0
+                            skipped_names = []
                             for idx, emp_row in office_emp_df.iterrows():
+                                is_included = st.session_state.get(f"att_inc_{idx}", True)
+                                emp_name = emp_row.get("officer_name", f"Employee {idx+1}")
+                                if not is_included:
+                                    skipped_names.append(emp_name)
+                                    continue
+                                
                                 w_days = int(st.session_state.get(f"att_work_{idx}", default_working_days))
                                 a_days = int(st.session_state.get(f"att_abs_{idx}", 0))
                                 payload = {
                                     "month": selected_month, "year": selected_year,
                                     "office_code": current_code, "office_name": assigned_office,
-                                    "employee_name": emp_row.get("officer_name", f"Employee {idx+1}"),
+                                    "employee_name": emp_name,
                                     "designation": emp_row.get("designation", "Staff"),
                                     "attendance_status": st.session_state.get(f"att_stat_{idx}", "Present"),
                                     "total_working_days": w_days,
@@ -1812,8 +1890,11 @@ else:
                                     success_count += 1
 
                             if success_count > 0:
-                                st.success(f"✅ Attendance & Absenty for all {success_count} employee(s) submitted for {calendar.month_name[selected_month]} {selected_year}!")
+                                skip_info = f" ({len(skipped_names)} excluded: {', '.join(skipped_names)})" if skipped_names else ""
+                                st.success(f"✅ Attendance & Absenty for {success_count} employee(s){skip_info} submitted for {calendar.month_name[selected_month]} {selected_year}!")
                                 st.balloons()
+                            elif skipped_names:
+                                st.warning(f"All {len(skipped_names)} employee(s) were excluded from this month's transmission.")
 
 
     # ====================================================
@@ -2525,6 +2606,211 @@ else:
                                 st.markdown(f"- 🏢 **{o_name}**: [📄 Open / Download Signed Sheet]({s_url})")
             else:
                 st.warning("No attendance data available for the selected period.")
+
+            # ── 👥 DISTRICT EMPLOYEE MASTER REGISTRY & CENTRAL OFFICE MAPPING ──
+            st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+            st.markdown("### 👥 District Employee Master Registry & Central Office Mapping")
+            st.caption("Centrally map, bulk import via CSV, and manage all executives and staff across all 18 blocks and subdivision offices. Mapped employees will automatically appear in their office's monthly attendance ledger.")
+
+            emp_mgmt_tab1, emp_mgmt_tab2, emp_mgmt_tab3 = st.tabs([
+                "📥 Bulk Import via CSV (All Offices)",
+                "➕ Register / Reassign Single Staff",
+                "📋 Master Staff Directory & Search"
+            ])
+
+            # TAB 1: BULK IMPORT VIA CSV
+            with emp_mgmt_tab1:
+                st.markdown("#### 📥 Bulk Upload & Map Staff via CSV")
+                st.info("💡 **Instructions:** Download the standard CSV template below, enter your staff details across all offices, and upload it back. Existing employee codes will be updated and new staff will be mapped instantly.")
+
+                st.download_button(
+                    "📄 Download Sample CSV Template",
+                    data=generate_sample_employee_csv(),
+                    file_name="Nawada_Employees_Mapping_Template.csv",
+                    mime="text/csv",
+                    help="Pre-formatted CSV template with standard office names and sample rows."
+                )
+
+                uploaded_emp_csv = st.file_uploader(
+                    "Upload Completed Staff CSV Spreadsheet",
+                    type=["csv"],
+                    key="admin_bulk_emp_csv"
+                )
+
+                if uploaded_emp_csv:
+                    try:
+                        csv_df = pd.read_csv(uploaded_emp_csv)
+                        csv_df.columns = [str(c).strip().lower().replace(" ", "_") for c in csv_df.columns]
+
+                        name_col = next((c for c in csv_df.columns if "name" in c or "officer" in c or "employee" in c), None)
+                        office_col = next((c for c in csv_df.columns if "office" in c or "jurisdiction" in c or "block" in c), None)
+                        code_col = next((c for c in csv_df.columns if "code" in c or "id" in c or "emp_no" in c), None)
+                        desig_col = next((c for c in csv_df.columns if "desig" in c or "post" in c or "role" in c), None)
+                        epf_col = next((c for c in csv_df.columns if "epf" in c or "pf" in c or "uan" in c), None)
+
+                        if not name_col or not office_col:
+                            st.error("❌ The CSV must contain at least an **Employee Name** column and an **Office Name** column.")
+                        else:
+                            st.write(f"📊 Read **{len(csv_df)}** row(s) from uploaded file.")
+                            import_rows = []
+                            for idx, r in csv_df.iterrows():
+                                e_name = str(r.get(name_col, "")).strip()
+                                o_name = str(r.get(office_col, "")).strip()
+                                if not e_name or not o_name or e_name.lower() == "nan":
+                                    continue
+
+                                e_code = str(r.get(code_col, "")).strip() if code_col else ""
+                                if not e_code or e_code.lower() == "nan":
+                                    off_slug = "".join([c for c in o_name.upper() if c.isalnum() or c == " "]).replace(" ", "-")[:12]
+                                    e_code = f"{off_slug}-EMP-{idx+1:03d}"
+
+                                e_desig = str(r.get(desig_col, "Staff")).strip() if desig_col else "Staff"
+                                if e_desig.lower() == "nan" or not e_desig:
+                                    e_desig = "Staff"
+
+                                e_epf = str(r.get(epf_col, "")).strip() if epf_col else ""
+                                if e_epf.lower() == "nan":
+                                    e_epf = ""
+
+                                import_rows.append({
+                                    "user_code": e_code,
+                                    "officer_name": e_name,
+                                    "office_name": o_name,
+                                    "designation": e_desig,
+                                    "epf_no": e_epf,
+                                    "role": "Block",
+                                    "photo_url": ""
+                                })
+
+                            clean_import_df = pd.DataFrame(import_rows)
+                            if not clean_import_df.empty:
+                                st.markdown("##### 🔍 Preview of Validated Records:")
+                                st.dataframe(
+                                    clean_import_df[["user_code", "officer_name", "office_name", "designation", "epf_no"]],
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+
+                                col_imp_btn, col_imp_info = st.columns([3, 4])
+                                with col_imp_btn:
+                                    if st.button("🚀 Confirm & Import All Employees to Database", key="btn_confirm_emp_import", use_container_width=True):
+                                        with st.spinner("Saving employee master directory to Supabase..."):
+                                            records_to_save = clean_import_df.to_dict(orient="records")
+                                            n_saved, err = bulk_upsert_employees(records_to_save)
+                                            if err:
+                                                st.error(f"❌ Error during import: {err}")
+                                            else:
+                                                st.success(f"🎉 Successfully mapped and saved **{n_saved}** employee profiles across **{clean_import_df['office_name'].nunique()}** offices!")
+                                                st.balloons()
+                                                st.rerun()
+                                with col_imp_info:
+                                    st.caption(f"Ready to import {len(clean_import_df)} employees across {clean_import_df['office_name'].nunique()} distinct offices.")
+                            else:
+                                st.warning("No valid employee records found in the uploaded file.")
+                    except Exception as e:
+                        st.error(f"Failed to process CSV spreadsheet: {e}")
+
+            # TAB 2: REGISTER / REASSIGN SINGLE STAFF
+            with emp_mgmt_tab2:
+                st.markdown("#### ➕ Add or Reassign Single Employee / Executive")
+                with st.form("admin_single_emp_form"):
+                    office_names_list = [v["name"] for k, v in USER_REGISTRY.items() if v.get("role") != "District"]
+                    s_col1, s_col2 = st.columns(2)
+                    with s_col1:
+                        sel_office_name = st.selectbox("Select Office / Block Jurisdiction *", office_names_list, key="adm_s_off")
+                        s_off_code = next((k for k, v in USER_REGISTRY.items() if v["name"] == sel_office_name), "OFF")
+                        s_emp_name = st.text_input("Employee Full Name *", placeholder="e.g. Ramesh Kumar", key="adm_s_name")
+                        s_emp_desig = st.text_input("Designation *", placeholder="e.g. Executive Assistant / Panchayat Secretary", key="adm_s_desig")
+                    with s_col2:
+                        s_default_code = f"{s_off_code}-EMP{datetime.now().strftime('%M%S')}"
+                        s_emp_code = st.text_input("Unique Employee Code *", value=s_default_code, key="adm_s_code", help="Must be unique for each employee.")
+                        s_emp_epf = st.text_input("EPF Number / Staff ID (Optional)", placeholder="e.g. 101441508206", key="adm_s_epf")
+                        s_emp_role = st.selectbox("Role", ["Block", "Subdivision", "District"], key="adm_s_role")
+
+                    if st.form_submit_button("💾 Save Employee to Database", use_container_width=True):
+                        if not s_emp_name.strip() or not s_emp_code.strip():
+                            st.error("Please provide both Employee Name and Unique Employee Code.")
+                        else:
+                            payload = {
+                                "user_code": s_emp_code.strip(),
+                                "officer_name": s_emp_name.strip(),
+                                "office_name": sel_office_name,
+                                "designation": s_emp_desig.strip() or "Staff",
+                                "epf_no": s_emp_epf.strip(),
+                                "role": s_emp_role,
+                                "photo_url": ""
+                            }
+                            if add_executive_profile(payload):
+                                st.success(f"✅ Employee **{s_emp_name}** successfully mapped to **{sel_office_name}**!")
+                                st.rerun()
+
+            # TAB 3: MASTER STAFF DIRECTORY & SEARCH
+            with emp_mgmt_tab3:
+                st.markdown("#### 📋 Master Employee Directory")
+                # Reload profiles to ensure latest data is displayed
+                current_profiles_df = pd.DataFrame()
+                try:
+                    p_res = supabase.table("user_profiles").select("*").execute()
+                    if p_res.data:
+                        current_profiles_df = pd.DataFrame(p_res.data)
+                except Exception:
+                    current_profiles_df = all_profiles_df
+
+                if not current_profiles_df.empty:
+                    f_c1, f_c2 = st.columns([3, 4])
+                    with f_c1:
+                        filter_dir_office = st.selectbox(
+                            "Filter by Office",
+                            ["All Offices"] + sorted(list(current_profiles_df["office_name"].dropna().unique())),
+                            key="adm_dir_off_filter"
+                        )
+                    with f_c2:
+                        search_dir_query = st.text_input("🔍 Search Staff by Name, Designation, or Code", key="adm_dir_search")
+
+                    filtered_profiles = current_profiles_df.copy()
+                    if filter_dir_office != "All Offices":
+                        filtered_profiles = filtered_profiles[filtered_profiles["office_name"] == filter_dir_office]
+                    if search_dir_query.strip():
+                        q = search_dir_query.strip().lower()
+                        filtered_profiles = filtered_profiles[
+                            filtered_profiles["officer_name"].str.lower().str.contains(q, na=False) |
+                            filtered_profiles["user_code"].str.lower().str.contains(q, na=False) |
+                            filtered_profiles["designation"].str.lower().str.contains(q, na=False)
+                        ]
+
+                    st.markdown(f"Showing **{len(filtered_profiles)}** staff profile(s) across selected criteria:")
+                    show_dir_cols = ["user_code", "officer_name", "office_name", "designation", "epf_no", "role"]
+                    valid_dir_cols = [c for c in show_dir_cols if c in filtered_profiles.columns]
+                    st.dataframe(filtered_profiles[valid_dir_cols], use_container_width=True, hide_index=True)
+
+                    d_btn_col1, d_btn_col2 = st.columns([4, 4])
+                    with d_btn_col1:
+                        dir_csv = filtered_profiles[valid_dir_cols].to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "📥 Download Filtered Staff Directory (CSV)",
+                            data=dir_csv,
+                            file_name="Nawada_Staff_Master_Directory.csv",
+                            mime="text/csv",
+                            key="dl_master_dir_csv"
+                        )
+
+                    with st.expander("🗑️ Delete / Remove an Employee Profile"):
+                        st.caption("Remove an employee profile if transferred, retired, or added by mistake.")
+                        del_code = st.selectbox(
+                            "Select Employee Code to Remove",
+                            options=["-- Select --"] + sorted(list(filtered_profiles["user_code"].unique())),
+                            key="adm_del_emp_sel"
+                        )
+                        if del_code != "-- Select --":
+                            if st.button(f"⚠️ Confirm Permanent Deletion of `{del_code}`", key="btn_del_emp_confirm"):
+                                ok, d_err = delete_employee_profile(del_code)
+                                if ok:
+                                    st.success(f"Profile `{del_code}` removed from database.")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to delete: {d_err}")
+                else:
+                    st.info("No employee profiles found in database.")
 
 # ============================================================
 # FOOTER
