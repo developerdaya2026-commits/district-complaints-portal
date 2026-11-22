@@ -53,10 +53,31 @@ st.markdown("""
     /* Works on NIC, BSWAN, private LAN, any restricted network */
 
     /* ── BASE RESET & TYPOGRAPHY ── */
-    /* Exclude icon elements, glide-data-grid, and popovers so Glide Data Grid icons and context menus render properly */
-    body, p, label, input, textarea, select, button,
-    span:not([class*="material"]):not([class*="glide"]):not([data-baseweb*="popover"]) {
+    /* Scope typography carefully so Streamlit icons, Glide Data Grid icons, and ligatures are NEVER corrupted */
+    .stApp, p, label, input, textarea, select, button,
+    .stMarkdown, .stText, h1, h2, h3, h4, h5, h6 {
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Noto Sans', 'Liberation Sans', Arial, sans-serif !important;
+    }
+    /* Explicitly protect icon fonts from being overridden by standard sans-serif fonts */
+    [class*="material-symbols"],
+    [class*="material-icons"],
+    [data-testid="stIconMaterial"],
+    .material-symbols-rounded,
+    .material-symbols-outlined,
+    .material-icons,
+    [data-baseweb="popover"] span:empty,
+    [data-baseweb="popover"] [role="menuitem"] > span:first-child,
+    [data-baseweb="popover"] li > span:first-child {
+        font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons', sans-serif !important;
+        font-style: normal !important;
+        font-weight: normal !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        display: inline-block !important;
+        white-space: nowrap !important;
+        word-wrap: normal !important;
+        direction: ltr !important;
+        -webkit-font-smoothing: antialiased !important;
     }
     .stApp {
         background-color: #f0f4f8;
@@ -739,7 +760,7 @@ st.markdown("""
         border-radius: 8px !important;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
         padding: 6px !important;
-        min-width: 200px !important;
+        min-width: 220px !important;
         opacity: 1 !important;
     }
 
@@ -749,13 +770,15 @@ st.markdown("""
         color: #1e293b !important;
         font-size: 14px !important;
         font-weight: 500 !important;
-        padding: 8px 12px !important;
+        padding: 8px 14px !important;
         border-radius: 6px !important;
         display: flex !important;
         flex-direction: row !important;
         align-items: center !important;
-        gap: 12px !important;
+        justify-content: flex-start !important;
+        gap: 14px !important;
         white-space: nowrap !important;
+        cursor: pointer !important;
     }
 
     div[data-baseweb="popover"] [role="menuitem"]:hover,
@@ -764,16 +787,31 @@ st.markdown("""
         color: #0f172a !important;
     }
 
-    /* Glide data grid column menu specific icons and text separation */
-    div[data-baseweb="popover"] [role="menuitem"] span,
-    div[data-baseweb="popover"] li span {
-        display: inline-block !important;
+    /* The icon element inside the menu item */
+    div[data-baseweb="popover"] [role="menuitem"] > span:first-child,
+    div[data-baseweb="popover"] li > span:first-child {
+        width: 24px !important;
+        min-width: 24px !important;
+        max-width: 24px !important;
+        height: 24px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 20px !important;
+        line-height: 1 !important;
+        color: #475569 !important;
+        overflow: hidden !important;
+        flex-shrink: 0 !important;
     }
-    
-    div[data-baseweb="popover"] [role="menuitem"] span:first-child,
-    div[data-baseweb="popover"] li span:first-child {
-        min-width: 20px !important;
-        text-align: center !important;
+
+    /* The text label element inside the menu item */
+    div[data-baseweb="popover"] [role="menuitem"] > span:last-child,
+    div[data-baseweb="popover"] li > span:last-child {
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        color: #1e293b !important;
+        flex-grow: 1 !important;
     }
 
     /* ── FIX: EXPANDER TEXT ── */
@@ -919,13 +957,54 @@ def add_executive_profile(payload):
     if supabase is None:
         return False
     try:
-        supabase.table("user_profiles").upsert(
+        res = supabase.table("user_profiles").upsert(
             payload, on_conflict="user_code"
         ).execute()
-        return True
-    except Exception as e:
-        st.error(f"Failed to add/update executive: {e}")
+        if res.data:
+            return True
         return False
+    except Exception as e:
+        err_msg = str(e)
+        if "row-level security" in err_msg.lower() or "403" in err_msg or "unauthorized" in err_msg.lower():
+            st.error(
+                "❌ **Supabase Table Permission Error (RLS):**\n\n"
+                "The `user_profiles` table has Row-Level Security active without an INSERT/UPDATE policy for public/anon.\n\n"
+                "👉 In Supabase Dashboard -> **Database** -> **Tables** -> `user_profiles` -> **RLS Policies** -> Add Policy for `INSERT` and `UPDATE`."
+            )
+        else:
+            st.error(f"Failed to add/update executive: {e}")
+        return False
+
+def get_office_employees(office_code, office_display_name):
+    """Fetches all employees belonging to an office by matching either user_code prefix or office_name variations."""
+    if supabase is None:
+        return pd.DataFrame()
+    try:
+        # Fetch all user_profiles
+        res = supabase.table("user_profiles").select("*").execute()
+        if not res.data:
+            return pd.DataFrame()
+        df = pd.DataFrame(res.data)
+        
+        # Match by office_code prefix (e.g. BLK-MESKAUR matches BLK-MESKAUR and BLK-MESKAUR-EMP...)
+        # or exact user_code match, or office_name substring
+        clean_code = str(office_code).strip()
+        clean_name = str(office_display_name).strip().lower().replace(" block", "").replace(" subdivision office", "").replace(" office", "").strip()
+        
+        def is_match(row):
+            uc = str(row.get("user_code", "")).strip()
+            on = str(row.get("office_name", "")).strip().lower()
+            if uc == clean_code or uc.startswith(f"{clean_code}-") or uc.startswith(f"{clean_code}_"):
+                return True
+            if clean_name and (clean_name in on or on in clean_name):
+                return True
+            return False
+            
+        matched = df[df.apply(is_match, axis=1)]
+        return matched.drop_duplicates(subset=["user_code"])
+    except Exception as e:
+        st.error(f"Error fetching office staff: {e}")
+        return pd.DataFrame()
 
 def load_monthly_attendance(month, year):
     """Fetches attendance records for all offices for a specific month/year."""
@@ -1627,7 +1706,8 @@ else:
                         new_emp_desig = st.text_input("Designation *", placeholder="e.g. Executive Assistant / Panchayat Secretary")
                         new_emp_epf = st.text_input("EPF Number / ID", placeholder="Optional EPF or Staff ID")
                     with ea_col2:
-                        new_emp_code = st.text_input("Unique Employee Code *", placeholder=f"e.g. {current_code}-EMP{int(datetime.now().timestamp())%10000}")
+                        suggested_code = f"{current_code}-EMP{int(datetime.now().timestamp())%100000}"
+                        new_emp_code = st.text_input("Unique Employee Code *", value=suggested_code, help="Must be unique. Format: OFFICE_CODE-EMP...")
                         new_emp_photo = st.file_uploader("Upload Passport Photo (Optional)", type=["jpg", "png", "jpeg"], key="exec_photo_upload")
                     
                     if st.form_submit_button("💾 Save Executive to Office Ledger", use_container_width=True):
@@ -1644,19 +1724,15 @@ else:
                                 "designation": new_emp_desig.strip(),
                                 "office_name": assigned_office,
                                 "epf_no": new_emp_epf.strip() if new_emp_epf else "N/A",
-                                "photo_url": photo_up_url
+                                "photo_url": photo_up_url,
+                                "role": "Block"
                             }
                             if add_executive_profile(exec_payload):
                                 st.success(f"✅ Executive **{new_emp_name}** successfully enrolled under {assigned_office}!")
                                 st.rerun()
 
-            office_emp_df = pd.DataFrame()
-            try:
-                emp_res = supabase.table("user_profiles").select("*").eq("office_name", assigned_office).execute()
-                if emp_res.data:
-                    office_emp_df = pd.DataFrame(emp_res.data)
-            except Exception:
-                pass
+            # Load employees for this office using smart matching (by user_code prefix or office name)
+            office_emp_df = get_office_employees(current_code, assigned_office)
 
             if office_emp_df.empty:
                 st.warning("⚠️ No employees registered for this office yet. Use the **'➕ Register / Update Executive'** section above to add employees.")
