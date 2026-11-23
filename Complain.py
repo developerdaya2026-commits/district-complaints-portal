@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -15,6 +16,58 @@ try:
     FPDF_AVAILABLE = True
 except ImportError:
     FPDF_AVAILABLE = False
+
+DEFAULT_50_STAFF_CSV = """office_name,user_code,officer_name,designation,epf_no,role
+Hisua Block,BLK-HISUA-EMP01,Shashi Bhushan Kumar,Executive Assistant,101441508089,Block
+Nardiganj Block,BLK-NARDIGANJ-EMP01,Pramod Kumar Rao,Executive Assistant,101441508528,Block
+Kashichak Block,BLK-KASHICHAK-EMP01,Shankar Kumar,Executive Assistant,101441508544,Block
+DM RTPS Cell (Nawada HQ),OFF-DM-RTPS-EMP01,Avinash Kumar Paswan,Executive Assistant,101441508091,Block
+Warisaliganj Block,BLK-WARISALIGANJ-EMP01,Amar Kumar,Executive Assistant,101441508268,Block
+Kowakole Block,BLK-KOWAKOLE-EMP01,Pavan Kumar,Executive Assistant,101441508193,Block
+Rajauli Block,BLK-RAJAULI-EMP01,Pintu Kumar,Executive Assistant,101441508603,Block
+Sadar Subdivision Office (Nawada),OFF-SADAR-SDO-EMP01,Amarjit Kumar,Executive Assistant,101441508782,Block
+Narhat Block,BLK-NARHAT-EMP01,Krishna Murari Singh,Executive Assistant,101441508559,Block
+Narhat Block,BLK-NARHAT-EMP02,Rakesh Kumar Nirala,Executive Assistant,101441506834,Block
+Kashichak Block,BLK-KASHICHAK-EMP02,Santosh Kumar,Executive Assistant,101441506765,Block
+Meskaur Block,BLK-MESKAUR-EMP01,Niraj Kumar,Executive Assistant,101441508769,Block
+Nardiganj Block,BLK-NARDIGANJ-EMP02,Akhalesh Kumar,Executive Assistant,101441508332,Block
+Govindpur Block,BLK-GOVINDPUR-EMP01,Pintu Kumar,Executive Assistant,101441508155,Block
+Sirdala Block,BLK-SIRDALA-EMP01,Chandra Shekhar Prasad,Executive Assistant,101411019880,Block
+Kashichak Block,BLK-KASHICHAK-EMP03,Dharmendra Pandit,Executive Assistant,101441508223,Block
+Govindpur Block,BLK-GOVINDPUR-EMP02,Rajeev Ranjan Bharti,Executive Assistant,101441508516,Block
+Roh Block,BLK-ROH-EMP01,Alok Ranjan Kishore,Executive Assistant,101441508350,Block
+Roh Block,BLK-ROH-EMP02,Archana Kumari,Executive Assistant,101441506823,Block
+Warisaliganj Block,BLK-WARISALIGANJ-EMP02,Rabindra Kumar,Executive Assistant,101441506875,Block
+Kowakole Block,BLK-KOWAKOLE-EMP02,Dinesh Kumar,Executive Assistant,101441508366,Block
+Nawada Sadar Block,BLK-NW-SADAR-EMP01,Gaurav Shekhar,Executive Assistant,101441506806,Block
+Sirdala Block,BLK-SIRDALA-EMP02,Pintu Kumar,Executive Assistant,101441506852,Block
+Warisaliganj Block,BLK-WARISALIGANJ-EMP03,Ranjeet Kumar,Executive Assistant,101441508537,Block
+Pakribarawan Block,BLK-PAKRIBARAWAN-EMP01,Ved Prakash,Executive Assistant,101441508690,Block
+Warisaliganj Block,BLK-WARISALIGANJ-EMP04,Purushotam Kumar,Executive Assistant,101441508456,Block
+Rajauli Block,BLK-RAJAULI-EMP02,Dharmendra Kumar,Executive Assistant,101441508730,Block
+Nawada Sadar Block,BLK-NW-SADAR-EMP02,Rekha kumari,Executive Assistant,101441508494,Block
+Kowakole Block,BLK-KOWAKOLE-EMP03,Sadanand Kumar Sinha,Executive Assistant,101441508252,Block
+Akbarpur Block,BLK-AKBARPUR-EMP01,Mithlesh Kumar,Executive Assistant,101441508418,Block
+Meskaur Block,BLK-MESKAUR-EMP02,R Rigan Kumar,Executive Assistant,101441508309,Block
+Narhat Block,BLK-NARHAT-EMP03,Suraj Kumar,Executive Assistant,101441508210,Block
+Rajauli Subdivision Office,OFF-RAJAULI-SDO-EMP01,Gireesh Kumar,Executive Assistant,101441508441,Block
+Pakribarawan Block,BLK-PAKRIBARAWAN-EMP02,Bablu Kumar,Executive Assistant,101441508707,Block
+Kowakole Block,BLK-KOWAKOLE-EMP04,Prince Kumar,Executive Assistant,101441508642,Block
+Meskaur Block,BLK-MESKAUR-EMP03,Shambhu Kumar,Executive Assistant,101441506796,Block
+Akbarpur Block,BLK-AKBARPUR-EMP02,Sanjeet Kumar Prabhat,Executive Assistant,101441508563,Block
+Hisua Block,BLK-HISUA-EMP02,Sangita Kumari,Executive Assistant,101441508657,Block
+Akbarpur Block,BLK-AKBARPUR-EMP03,Upendra Kumar,Executive Assistant,101441508661,Block
+Nardiganj Block,BLK-NARDIGANJ-EMP03,Sanjay Kumar,Executive Assistant,101441508688,Block
+Sirdala Block,BLK-SIRDALA-EMP03,Gyanendra Kumar,Executive Assistant,101441506777,Block
+Narhat Block,BLK-NARHAT-EMP04,Kanhai Kumar,Executive Assistant,101441508674,Block
+Rajauli Block,BLK-RAJAULI-EMP03,Vikash Kumar,Executive Assistant,101441508619,Block
+Narhat Block,BLK-NARHAT-EMP05,Vikash Kumar,Executive Assistant,101441508748,Block
+Govindpur Block,BLK-GOVINDPUR-EMP03,Sumit Kumar,Executive Assistant,101441508247,Block
+Nawada Sadar Block,BLK-NW-SADAR-EMP03,Urmila Kumari,Executive Assistant,101441508795,Block
+Nawada Sadar Block,BLK-NW-SADAR-EMP04,Rajnish Kumar,Executive Assistant,101441508805,Block
+Hisua Block,BLK-HISUA-EMP03,Pradeep Chaudhary,Executive Assistant,101441508473,Block
+Pakribarawan Block,BLK-PAKRIBARAWAN-EMP03,Dhiraj Kumar,Executive Assistant,101546147809,Block
+Govindpur Block,BLK-GOVINDPUR-EMP04,Nilmani Madhav Kumar,Executive Assistant,101792349704,Block"""
 
 # ============================================================
 # 1. PAGE CONFIGURATION
@@ -2631,22 +2684,20 @@ else:
                     help="Pre-formatted CSV template with standard office names and sample rows."
                 )
 
-                # Quick Direct Sync Option for 50 Staff
-                ready_csv_path = os.path.join(os.path.dirname(__file__), "Nawada_Staff_50_Employees_Ready.csv")
-                if os.path.exists(ready_csv_path):
-                    with st.expander("⚡ Quick Direct Sync: 50 Validated Nawada Staff (One-Click)", expanded=False):
-                        st.write("A pre-validated roster of **50 staff profiles** across all 18 blocks & subdivisions is already verified and packaged.")
-                        if st.button("🚀 Direct Sync All 50 Staff to Database Now", key="btn_direct_sync_50_staff"):
-                            with st.spinner("Syncing 50 employee profiles to Supabase database..."):
-                                df_ready = pd.read_csv(ready_csv_path, dtype=str)
-                                records_ready = df_ready.to_dict(orient="records")
-                                n_up, err_up = bulk_upsert_employees(records_ready)
-                                if err_up:
-                                    st.error(f"Sync error: {err_up}")
-                                else:
-                                    st.success(f"🎉 Successfully imported and mapped **{n_up}** staff profiles across all offices!")
-                                    st.balloons()
-                                    st.rerun()
+                # Quick Direct Sync Option for 50 Staff (Embedded Roster)
+                with st.expander("⚡ Quick Direct Sync: 50 Validated Nawada Staff (One-Click)", expanded=True):
+                    st.write("A pre-validated roster of **50 staff profiles** across all 18 blocks & subdivisions is verified and packaged into the portal.")
+                    if st.button("🚀 Direct Sync All 50 Staff to Database Now", key="btn_direct_sync_50_staff", use_container_width=True):
+                        with st.spinner("Syncing 50 employee profiles to Supabase database..."):
+                            df_ready = pd.read_csv(io.StringIO(DEFAULT_50_STAFF_CSV.strip()), dtype=str)
+                            records_ready = df_ready.to_dict(orient="records")
+                            n_up, err_up = bulk_upsert_employees(records_ready)
+                            if err_up:
+                                st.error(f"Sync error: {err_up}")
+                            else:
+                                st.success(f"🎉 Successfully imported and mapped **{n_up}** staff profiles across all offices!")
+                                st.balloons()
+                                st.rerun()
 
                 uploaded_emp_csv = st.file_uploader(
                     "Upload Completed Staff CSV Spreadsheet",
