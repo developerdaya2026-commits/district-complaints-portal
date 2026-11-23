@@ -2631,6 +2631,23 @@ else:
                     help="Pre-formatted CSV template with standard office names and sample rows."
                 )
 
+                # Quick Direct Sync Option for 50 Staff
+                ready_csv_path = os.path.join(os.path.dirname(__file__), "Nawada_Staff_50_Employees_Ready.csv")
+                if os.path.exists(ready_csv_path):
+                    with st.expander("⚡ Quick Direct Sync: 50 Validated Nawada Staff (One-Click)", expanded=False):
+                        st.write("A pre-validated roster of **50 staff profiles** across all 18 blocks & subdivisions is already verified and packaged.")
+                        if st.button("🚀 Direct Sync All 50 Staff to Database Now", key="btn_direct_sync_50_staff"):
+                            with st.spinner("Syncing 50 employee profiles to Supabase database..."):
+                                df_ready = pd.read_csv(ready_csv_path, dtype=str)
+                                records_ready = df_ready.to_dict(orient="records")
+                                n_up, err_up = bulk_upsert_employees(records_ready)
+                                if err_up:
+                                    st.error(f"Sync error: {err_up}")
+                                else:
+                                    st.success(f"🎉 Successfully imported and mapped **{n_up}** staff profiles across all offices!")
+                                    st.balloons()
+                                    st.rerun()
+
                 uploaded_emp_csv = st.file_uploader(
                     "Upload Completed Staff CSV Spreadsheet",
                     type=["csv"],
@@ -2642,55 +2659,84 @@ else:
                         csv_df = pd.read_csv(uploaded_emp_csv, dtype=str)
                         csv_df.columns = [str(c).strip().lower().replace(" ", "_") for c in csv_df.columns]
 
-                        # 1. Office column resolution (prioritize exact candidates first)
-                        office_candidates = ["office_name", "office", "jurisdiction", "block", "office_code"]
-                        office_col = None
-                        for oc in office_candidates:
-                            if oc in csv_df.columns:
-                                office_col = oc
-                                break
-                        if not office_col:
-                            office_col = next((c for c in csv_df.columns if "office" in c or "jurisdiction" in c or "block" in c), None)
+                        # 1. Default Office column resolution
+                        if "office_name" in csv_df.columns:
+                            def_off_col = "office_name"
+                        elif "office" in csv_df.columns:
+                            def_off_col = "office"
+                        elif "jurisdiction" in csv_df.columns:
+                            def_off_col = "jurisdiction"
+                        elif "block" in csv_df.columns:
+                            def_off_col = "block"
+                        else:
+                            def_off_col = next((c for c in csv_df.columns if c.startswith("office_") or c == "office" or "block" in c or "jurisdiction" in c), csv_df.columns[0])
 
-                        # 2. Officer/Employee Name column resolution (EXCLUDE office_col)
-                        name_candidates = ["officer_name", "employee_name", "staff_name", "full_name", "emp_name", "officer", "name"]
-                        name_col = None
-                        for nc in name_candidates:
-                            if nc in csv_df.columns and nc != office_col and not nc.startswith("office"):
-                                name_col = nc
-                                break
-                        if not name_col:
-                            name_col = next((c for c in csv_df.columns if c != office_col and not c.startswith("office") and ("officer" in c or "employee" in c or "staff" in c or "name" in c)), None)
+                        # 2. Default Officer Name column resolution
+                        if "officer_name" in csv_df.columns:
+                            def_name_col = "officer_name"
+                        elif "employee_name" in csv_df.columns:
+                            def_name_col = "employee_name"
+                        elif "staff_name" in csv_df.columns:
+                            def_name_col = "staff_name"
+                        elif "full_name" in csv_df.columns:
+                            def_name_col = "full_name"
+                        elif "name" in csv_df.columns and "name" != def_off_col:
+                            def_name_col = "name"
+                        else:
+                            def_name_col = next((c for c in csv_df.columns if c != def_off_col and not c.startswith("office_") and c != "office" and ("officer" in c or "employee" in c or "staff" in c or "name" in c)), csv_df.columns[min(2, len(csv_df.columns)-1)])
 
-                        # 3. Employee unique code
-                        code_candidates = ["user_code", "employee_code", "emp_code", "code", "staff_id", "emp_id", "id"]
-                        code_col = None
-                        for cc in code_candidates:
-                            if cc in csv_df.columns:
-                                code_col = cc
-                                break
-                        if not code_col:
-                            code_col = next((c for c in csv_df.columns if "code" in c or "emp_no" in c or "staff_no" in c), None)
+                        # 3. Default Employee Code column resolution
+                        if "user_code" in csv_df.columns:
+                            def_code_col = "user_code"
+                        elif "employee_code" in csv_df.columns:
+                            def_code_col = "employee_code"
+                        elif "code" in csv_df.columns:
+                            def_code_col = "code"
+                        else:
+                            def_code_col = next((c for c in csv_df.columns if "code" in c or "id" in c), None)
 
-                        # 4. Designation
-                        desig_candidates = ["designation", "post", "role_title", "designation_name"]
-                        desig_col = None
-                        for dc in desig_candidates:
-                            if dc in csv_df.columns:
-                                desig_col = dc
-                                break
-                        if not desig_col:
-                            desig_col = next((c for c in csv_df.columns if "desig" in c or "post" in c), None)
+                        # 4. Default Designation column resolution
+                        if "designation" in csv_df.columns:
+                            def_desig_col = "designation"
+                        elif "post" in csv_df.columns:
+                            def_desig_col = "post"
+                        else:
+                            def_desig_col = next((c for c in csv_df.columns if "desig" in c or "post" in c), None)
 
-                        # 5. EPF No
-                        epf_candidates = ["epf_no", "epf", "epf_number", "pf_no", "uan", "uan_no"]
-                        epf_col = None
-                        for ec in epf_candidates:
-                            if ec in csv_df.columns:
-                                epf_col = ec
-                                break
-                        if not epf_col:
-                            epf_col = next((c for c in csv_df.columns if "epf" in c or "pf" in c or "uan" in c), None)
+                        # 5. Default EPF column resolution
+                        if "epf_no" in csv_df.columns:
+                            def_epf_col = "epf_no"
+                        elif "epf" in csv_df.columns:
+                            def_epf_col = "epf"
+                        else:
+                            def_epf_col = next((c for c in csv_df.columns if "epf" in c or "pf" in c or "uan" in c), None)
+
+                        # Interactive Mapping Selectors
+                        st.markdown("##### 📌 Column Mapping Verification")
+                        c_map1, c_map2 = st.columns(2)
+                        with c_map1:
+                            off_idx = list(csv_df.columns).index(def_off_col) if def_off_col in list(csv_df.columns) else 0
+                            office_col = st.selectbox("🏢 Office / Jurisdiction Column", list(csv_df.columns), index=off_idx, key="admin_csv_map_off")
+                        with c_map2:
+                            name_idx = list(csv_df.columns).index(def_name_col) if def_name_col in list(csv_df.columns) else min(2, len(csv_df.columns)-1)
+                            name_col = st.selectbox("👤 Employee / Officer Name Column", list(csv_df.columns), index=name_idx, key="admin_csv_map_name")
+
+                        c_map3, c_map4, c_map5 = st.columns(3)
+                        with c_map3:
+                            code_opts = ["-- Auto-generate Unique Code --"] + list(csv_df.columns)
+                            code_idx = (list(csv_df.columns).index(def_code_col) + 1) if def_code_col in list(csv_df.columns) else 0
+                            sel_code = st.selectbox("🔑 Employee Code Column", code_opts, index=code_idx, key="admin_csv_map_code")
+                            code_col = None if sel_code.startswith("--") else sel_code
+                        with c_map4:
+                            desig_opts = ["-- Default 'Staff' --"] + list(csv_df.columns)
+                            desig_idx = (list(csv_df.columns).index(def_desig_col) + 1) if def_desig_col in list(csv_df.columns) else 0
+                            sel_desig = st.selectbox("💼 Designation Column", desig_opts, index=desig_idx, key="admin_csv_map_desig")
+                            desig_col = None if sel_desig.startswith("--") else sel_desig
+                        with c_map5:
+                            epf_opts = ["-- None --"] + list(csv_df.columns)
+                            epf_idx = (list(csv_df.columns).index(def_epf_col) + 1) if def_epf_col in list(csv_df.columns) else 0
+                            sel_epf = st.selectbox("💳 EPF / ID Column", epf_opts, index=epf_idx, key="admin_csv_map_epf")
+                            epf_col = None if sel_epf.startswith("--") else sel_epf
 
                         if not name_col or not office_col:
                             st.error(f"❌ Could not resolve required columns. Detected columns: `{list(csv_df.columns)}`. Please ensure there is both an **office_name** and an **officer_name** column.")
