@@ -2639,20 +2639,67 @@ else:
 
                 if uploaded_emp_csv:
                     try:
-                        csv_df = pd.read_csv(uploaded_emp_csv)
+                        csv_df = pd.read_csv(uploaded_emp_csv, dtype=str)
                         csv_df.columns = [str(c).strip().lower().replace(" ", "_") for c in csv_df.columns]
 
-                        name_col = next((c for c in csv_df.columns if "name" in c or "officer" in c or "employee" in c), None)
-                        office_col = next((c for c in csv_df.columns if "office" in c or "jurisdiction" in c or "block" in c), None)
-                        code_col = next((c for c in csv_df.columns if "code" in c or "id" in c or "emp_no" in c), None)
-                        desig_col = next((c for c in csv_df.columns if "desig" in c or "post" in c or "role" in c), None)
-                        epf_col = next((c for c in csv_df.columns if "epf" in c or "pf" in c or "uan" in c), None)
+                        # 1. Office column resolution (prioritize exact candidates first)
+                        office_candidates = ["office_name", "office", "jurisdiction", "block", "office_code"]
+                        office_col = None
+                        for oc in office_candidates:
+                            if oc in csv_df.columns:
+                                office_col = oc
+                                break
+                        if not office_col:
+                            office_col = next((c for c in csv_df.columns if "office" in c or "jurisdiction" in c or "block" in c), None)
+
+                        # 2. Officer/Employee Name column resolution (EXCLUDE office_col)
+                        name_candidates = ["officer_name", "employee_name", "staff_name", "full_name", "emp_name", "officer", "name"]
+                        name_col = None
+                        for nc in name_candidates:
+                            if nc in csv_df.columns and nc != office_col and not nc.startswith("office"):
+                                name_col = nc
+                                break
+                        if not name_col:
+                            name_col = next((c for c in csv_df.columns if c != office_col and not c.startswith("office") and ("officer" in c or "employee" in c or "staff" in c or "name" in c)), None)
+
+                        # 3. Employee unique code
+                        code_candidates = ["user_code", "employee_code", "emp_code", "code", "staff_id", "emp_id", "id"]
+                        code_col = None
+                        for cc in code_candidates:
+                            if cc in csv_df.columns:
+                                code_col = cc
+                                break
+                        if not code_col:
+                            code_col = next((c for c in csv_df.columns if "code" in c or "emp_no" in c or "staff_no" in c), None)
+
+                        # 4. Designation
+                        desig_candidates = ["designation", "post", "role_title", "designation_name"]
+                        desig_col = None
+                        for dc in desig_candidates:
+                            if dc in csv_df.columns:
+                                desig_col = dc
+                                break
+                        if not desig_col:
+                            desig_col = next((c for c in csv_df.columns if "desig" in c or "post" in c), None)
+
+                        # 5. EPF No
+                        epf_candidates = ["epf_no", "epf", "epf_number", "pf_no", "uan", "uan_no"]
+                        epf_col = None
+                        for ec in epf_candidates:
+                            if ec in csv_df.columns:
+                                epf_col = ec
+                                break
+                        if not epf_col:
+                            epf_col = next((c for c in csv_df.columns if "epf" in c or "pf" in c or "uan" in c), None)
 
                         if not name_col or not office_col:
-                            st.error("❌ The CSV must contain at least an **Employee Name** column and an **Office Name** column.")
+                            st.error(f"❌ Could not resolve required columns. Detected columns: `{list(csv_df.columns)}`. Please ensure there is both an **office_name** and an **officer_name** column.")
                         else:
                             st.write(f"📊 Read **{len(csv_df)}** row(s) from uploaded file.")
                             import_rows = []
+                            seen_codes = set()
+                            duplicate_auto_fixed = 0
+
                             for idx, r in csv_df.iterrows():
                                 e_name = str(r.get(name_col, "")).strip()
                                 o_name = str(r.get(office_col, "")).strip()
@@ -2664,6 +2711,16 @@ else:
                                     off_slug = "".join([c for c in o_name.upper() if c.isalnum() or c == " "]).replace(" ", "-")[:12]
                                     e_code = f"{off_slug}-EMP-{idx+1:03d}"
 
+                                # Disambiguate duplicate user_code so employees sharing the same code are not overwritten
+                                if e_code in seen_codes:
+                                    duplicate_auto_fixed += 1
+                                    base_c = e_code
+                                    c_idx = 2
+                                    while f"{base_c}-{c_idx:02d}" in seen_codes:
+                                        c_idx += 1
+                                    e_code = f"{base_c}-{c_idx:02d}"
+                                seen_codes.add(e_code)
+
                                 e_desig = str(r.get(desig_col, "Staff")).strip() if desig_col else "Staff"
                                 if e_desig.lower() == "nan" or not e_desig:
                                     e_desig = "Staff"
@@ -2671,6 +2728,11 @@ else:
                                 e_epf = str(r.get(epf_col, "")).strip() if epf_col else ""
                                 if e_epf.lower() == "nan":
                                     e_epf = ""
+                                elif "e+" in e_epf.lower():
+                                    try:
+                                        e_epf = f"{int(float(e_epf))}"
+                                    except Exception:
+                                        pass
 
                                 import_rows.append({
                                     "user_code": e_code,
@@ -2684,6 +2746,9 @@ else:
 
                             clean_import_df = pd.DataFrame(import_rows)
                             if not clean_import_df.empty:
+                                if duplicate_auto_fixed > 0:
+                                    st.info(f"ℹ️ Note: Auto-adjusted **{duplicate_auto_fixed}** duplicate code(s) (e.g. repeated `-EMP01` for different staff) to ensure no employee profile is overwritten.")
+
                                 st.markdown("##### 🔍 Preview of Validated Records:")
                                 st.dataframe(
                                     clean_import_df[["user_code", "officer_name", "office_name", "designation", "epf_no"]],
