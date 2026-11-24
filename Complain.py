@@ -1268,16 +1268,27 @@ def fetch_storage_file_bytes(file_url_or_path, bucket_name="complaint-documents"
 
     return None, file_name, mime_type
 
+_ACTIVE_RUN_KEYS = set()
+
 def render_file_action_button(file_url, btn_label="📄 View / Download", key_id="1", bucket_name="complaint-documents"):
     """Renders a direct in-app download button and viewer that bypasses
     NIC/BSWAN firewalls and ERR_QUIC_PROTOCOL_ERROR.
+    Guarantees unique widget keys across all tabs.
     """
     if not file_url or not str(file_url).strip():
         st.caption("📎 No file attached.")
         return
 
     val = str(file_url).strip()
-    clean_k = str(key_id).replace(" ", "_").replace("-", "_").replace("/", "_")
+    clean_k = str(key_id).replace(" ", "_").replace("-", "_").replace("/", "_").replace(":", "_")
+    base_k = f"dl_btn_{clean_k}"
+    final_k = base_k
+    k_counter = 1
+    while final_k in _ACTIVE_RUN_KEYS:
+        final_k = f"{base_k}_{k_counter}"
+        k_counter += 1
+    _ACTIVE_RUN_KEYS.add(final_k)
+
     file_bytes, file_name, mime_type = fetch_storage_file_bytes(val, bucket_name=bucket_name)
     signed_url = get_secure_file_url(val, bucket_name=bucket_name)
     clean_label = btn_label.replace("📄", "").replace("View", "").strip() or "Document"
@@ -1290,7 +1301,7 @@ def render_file_action_button(file_url, btn_label="📄 View / Download", key_id
                 data=file_bytes,
                 file_name=file_name,
                 mime=mime_type,
-                key=f"dl_btn_{clean_k}",
+                key=final_k,
                 use_container_width=True
             )
         with b_c2:
@@ -1755,7 +1766,7 @@ else:
     """, unsafe_allow_html=True)
 
     # ── SHARED DOSSIER CARD RENDERER ──
-    def render_dossier_card(row_data, is_district=False):
+    def render_dossier_card(row_data, is_district=False, key_prefix="dossier"):
         status_val = row_data.get('Normalized_Status', row_data.get('Status', 'Pending'))
         badge_class = "badge-pending"
         if status_val == "In Progress":
@@ -1789,7 +1800,7 @@ else:
             desc_text = row_data.get('Description', 'No description provided.')
             st.markdown(f'<div class="dossier-content-desc">{desc_text}</div>', unsafe_allow_html=True)
             raw_c_file = str(row_data.get('Uploaded File URL', ''))
-            render_file_action_button(raw_c_file, btn_label="📄 View Complaint Attachment", key_id=f"cpl_{row_data.get('Complaint ID')}")
+            render_file_action_button(raw_c_file, btn_label="📄 View Complaint Attachment", key_id=f"{key_prefix}_cpl_{row_data.get('Complaint ID')}")
 
         with col_d2:
             st.markdown('<div class="dossier-label">⚖ District ATR Directive:</div>', unsafe_allow_html=True)
@@ -1800,7 +1811,7 @@ else:
             else:
                 st.markdown(f'<div class="dossier-content-atr">✅ {atr_text}</div>', unsafe_allow_html=True)
             raw_atr_file = str(row_data.get('ATR Response File URL', ''))
-            render_file_action_button(raw_atr_file, btn_label="📄 View ATR Document", key_id=f"atr_{row_data.get('Complaint ID')}")
+            render_file_action_button(raw_atr_file, btn_label="📄 View ATR Document", key_id=f"{key_prefix}_atr_{row_data.get('Complaint ID')}")
 
     # ====================================================
     # ROLE A: BLOCK PORTAL
@@ -1922,7 +1933,7 @@ else:
                     st.markdown("### 🔍 Case Dossier Inspector")
                     selected_cpl = st.selectbox("Select Complaint ID:", filtered_df['Complaint ID'].unique(), key="block_dossier_select")
                     selected_row = filtered_df[filtered_df['Complaint ID'] == selected_cpl].iloc[0]
-                    render_dossier_card(selected_row)
+                    render_dossier_card(selected_row, key_prefix="blk_dossier")
             else:
                 st.info("No records to display.")
 
@@ -2188,7 +2199,7 @@ else:
                 if not filtered_global.empty:
                     chosen_id = st.selectbox("Select Complaint ID:", filtered_global['Complaint ID'].unique(), key="admin_dossier_select")
                     chosen_row = filtered_global[filtered_global['Complaint ID'] == chosen_id].iloc[0]
-                    render_dossier_card(chosen_row, is_district=True)
+                    render_dossier_card(chosen_row, is_district=True, key_prefix="adm_tab1_dossier")
             else:
                 st.info("📂 Database empty. No grievances filed yet.")
 
@@ -2516,7 +2527,7 @@ else:
                     df_global['Complaint ID'].unique()
                 )
                 case_row = df_global[df_global['Complaint ID'] == case_to_update].iloc[0]
-                render_dossier_card(case_row, is_district=True)
+                render_dossier_card(case_row, is_district=True, key_prefix="adm_tab3_atr_dossier")
 
                 st.markdown("#### ✍ Official ATR Directive Entry")
                 with st.form(key="hq_atr_form"):
