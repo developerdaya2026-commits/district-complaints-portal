@@ -1085,7 +1085,7 @@ def generate_sample_employee_csv():
     return df.to_csv(index=False).encode('utf-8')
 
 def get_office_employees(office_code, office_display_name):
-    """Fetches all employees belonging to an office by matching either user_code prefix or office_name variations."""
+    """Fetches all employees belonging to an office with strict Block vs Subdivision isolation."""
     if supabase is None:
         return pd.DataFrame()
     try:
@@ -1094,29 +1094,62 @@ def get_office_employees(office_code, office_display_name):
         if not res.data:
             return pd.DataFrame()
         df = pd.DataFrame(res.data)
-        
-        # Match by office_code prefix or exact user_code match, or office_name substring
-        clean_code = str(office_code).strip()
-        clean_code_norm = clean_code.replace("-", "").replace("_", "").replace(" ", "").lower()
-        clean_name = str(office_display_name).strip().lower().replace(" block", "").replace(" subdivision office", "").replace(" office", "").strip()
-        
+
+        c_code = str(office_code).strip().upper()
+        c_name = str(office_display_name).strip().lower()
+
+        # Office tier classification to strictly prevent Block vs Subdivision cross-contamination
+        is_subdiv = ("subdivision" in c_name or "sdo" in c_code.lower())
+        is_block = ("block" in c_name or "blk" in c_code.lower())
+        is_rtps = ("rtps" in c_code.lower() or "rtps" in c_name)
+        is_sp = ("sp" in c_code.lower() or "sp office" in c_name)
+
         def is_match(row):
-            uc = str(row.get("user_code", "")).strip()
-            on = str(row.get("office_name", "")).strip().lower()
-            uc_norm = uc.replace("-", "").replace("_", "").replace(" ", "").lower()
-            
-            # Code matches: exact, prefix with separator, or normalized inclusion
-            if uc == clean_code or uc.startswith(f"{clean_code}-") or uc.startswith(f"{clean_code}_") or uc.startswith(f"{clean_code} "):
+            r_code = str(row.get("user_code", "")).strip().upper()
+            r_name = str(row.get("office_name", "")).strip().lower()
+
+            # Rule 1: Exact user_code or exact prefix with separator
+            if r_code == c_code or r_code.startswith(f"{c_code}-") or r_code.startswith(f"{c_code}_") or r_code.startswith(f"{c_code} "):
                 return True
-            if clean_code_norm and (clean_code_norm in uc_norm or uc_norm.startswith(clean_code_norm)):
+
+            # Rule 2: Tier guard - Subdivision must NEVER match Block and vice versa
+            r_is_subdiv = ("subdivision" in r_name or "sdo" in r_code.lower())
+            r_is_block = ("block" in r_name or "blk" in r_code.lower())
+            r_is_rtps = ("rtps" in r_code.lower() or "rtps" in r_name)
+            r_is_sp = ("sp" in r_code.lower() or "sp office" in r_name)
+
+            if is_subdiv != r_is_subdiv:
+                return False
+            if is_block != r_is_block:
+                return False
+            if is_rtps != r_is_rtps:
+                return False
+            if is_sp != r_is_sp:
+                return False
+
+            # Rule 3: Exact office name match
+            if r_name == c_name:
                 return True
-            # Office name match
-            if clean_name and (clean_name in on or on in clean_name):
+
+            # Rule 4: Distinctive office name keyword matching
+            clean_curr = c_name.replace("block", "").replace("subdivision", "").replace("office", "").replace("(", "").replace(")", "").strip()
+            clean_row = r_name.replace("block", "").replace("subdivision", "").replace("office", "").replace("(", "").replace(")", "").strip()
+            if clean_curr and (clean_curr == clean_row or clean_curr in clean_row or clean_row in clean_curr):
                 return True
+
             return False
-            
+
         matched = df[df.apply(is_match, axis=1)]
-        return matched.drop_duplicates(subset=["user_code"])
+        matched = matched.drop_duplicates(subset=["user_code"])
+
+        # Deduplicate by non-empty EPF number within office to prevent duplicate roster rows
+        if "epf_no" in matched.columns:
+            has_epf = matched["epf_no"].astype(str).str.strip().ne("") & matched["epf_no"].astype(str).ne("nan") & matched["epf_no"].astype(str).ne("None")
+            epf_dedup = matched[has_epf].drop_duplicates(subset=["epf_no"])
+            no_epf = matched[~has_epf]
+            matched = pd.concat([epf_dedup, no_epf]).sort_index()
+
+        return matched
     except Exception as e:
         st.error(f"Error fetching office staff: {e}")
         return pd.DataFrame()
@@ -1181,20 +1214,113 @@ def get_secure_file_url(stored_val, bucket_name="complaint-documents"):
         return val.replace("http://", "https://", 1)
     return val
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_storage_file_bytes(file_url_or_path, bucket_name="complaint-documents"):
+    """Downloads file from Supabase storage server-side.
+    Returns (file_bytes, filename, mime_type).
+    This bypasses NIC/BSWAN browser firewalls and ERR_QUIC_PROTOCOL_ERROR
+    because the Streamlit server downloads the file over standard TCP/HTTPS.
+    """
+    if not file_url_or_path or not str(file_url_or_path).strip():
+        return None, "", "application/octet-stream"
+    
+    val = str(file_url_or_path).strip()
+    file_name = val.split("/")[-1].split("?")[0]
+    
+    ext = file_name.split(".")[-1].lower() if "." in file_name else ""
+    mime_map = {
+        "pdf": "application/pdf",
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "csv": "text/csv",
+        "txt": "text/plain"
+    }
+    mime_type = mime_map.get(ext, "application/octet-stream")
+    
+    # Method 1: Direct download via Supabase storage client
+    if supabase and file_name:
+        try:
+            raw_data = supabase.storage.from_(bucket_name).download(file_name)
+            if raw_data and len(raw_data) > 0:
+                return raw_data, file_name, mime_type
+        except Exception:
+            pass
+
+    # Method 2: Fetch via signed URL server-side (TCP HTTPS)
+    try:
+        signed_url = get_secure_file_url(val, bucket_name=bucket_name)
+        if signed_url and signed_url.startswith("http"):
+            resp = requests.get(signed_url, timeout=20)
+            if resp.status_code == 200 and len(resp.content) > 0:
+                return resp.content, file_name, mime_type
+    except Exception:
+        pass
+
+    # Method 3: Direct HTTP fetch if raw URL
+    if val.startswith("http"):
+        try:
+            resp = requests.get(val, timeout=20)
+            if resp.status_code == 200 and len(resp.content) > 0:
+                return resp.content, file_name, mime_type
+        except Exception:
+            pass
+
+    return None, file_name, mime_type
+
 def render_file_action_button(file_url, btn_label="📄 View / Download", key_id="1", bucket_name="complaint-documents"):
-    """Renders a direct link button for file download/view."""
+    """Renders a direct in-app download button and viewer that bypasses
+    NIC/BSWAN firewalls and ERR_QUIC_PROTOCOL_ERROR.
+    """
     if not file_url or not str(file_url).strip():
         st.caption("📎 No file attached.")
         return
-    signed_url = get_secure_file_url(file_url, bucket_name=bucket_name)
-    st.markdown(
-        f'<a href="{signed_url}" target="_blank" style="text-decoration: none;">'
-        f'<button style="background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; padding: 8px 18px; '
-        f'border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 13px; '
-        f'box-shadow: 0 2px 6px rgba(30,58,138,0.25);">'
-        f'{btn_label}</button></a>',
-        unsafe_allow_html=True
-    )
+
+    val = str(file_url).strip()
+    clean_k = str(key_id).replace(" ", "_").replace("-", "_").replace("/", "_")
+    file_bytes, file_name, mime_type = fetch_storage_file_bytes(val, bucket_name=bucket_name)
+    signed_url = get_secure_file_url(val, bucket_name=bucket_name)
+    clean_label = btn_label.replace("📄", "").replace("View", "").strip() or "Document"
+
+    if file_bytes:
+        b_c1, b_c2 = st.columns([1, 1])
+        with b_c1:
+            st.download_button(
+                label=f"📥 Download {clean_label}",
+                data=file_bytes,
+                file_name=file_name,
+                mime=mime_type,
+                key=f"dl_btn_{clean_k}",
+                use_container_width=True
+            )
+        with b_c2:
+            st.markdown(
+                f'<a href="{signed_url}" target="_blank" style="text-decoration: none;">'
+                f'<button style="width: 100%; background: #f8fafc; color: #1e3a8a; border: 1px solid #cbd5e1; '
+                f'padding: 7px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;">'
+                f'🔗 Direct URL</button></a>',
+                unsafe_allow_html=True
+            )
+        
+        # In-app preview modal/expander (no external requests needed)
+        if mime_type.startswith("image/"):
+            with st.expander(f"👁️ Preview {clean_label} (Image)", expanded=False):
+                st.image(file_bytes, use_container_width=True)
+        elif mime_type == "application/pdf":
+            with st.expander(f"👁️ Preview {clean_label} (PDF in App)", expanded=False):
+                b64_pdf = base64.b64encode(file_bytes).decode('utf-8')
+                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="550" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+    else:
+        # Fallback to direct signed button link
+        st.markdown(
+            f'<a href="{signed_url}" target="_blank" style="text-decoration: none;">'
+            f'<button style="background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; padding: 8px 18px; '
+            f'border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 13px; '
+            f'box-shadow: 0 2px 6px rgba(30,58,138,0.25);">'
+            f'{btn_label}</button></a>',
+            unsafe_allow_html=True
+        )
 
 def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
     """Uploads file to Supabase Storage with clean naming.
@@ -1776,6 +1902,7 @@ else:
                         },
                         hide_index=True, use_container_width=True
                     )
+                    st.caption("💡 **Tip:** Use the **Case Dossier Inspector** below to download attachments or preview documents directly inside the application.")
 
                     # Export toolbar for block
                     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -2037,6 +2164,7 @@ else:
                     },
                     hide_index=True, use_container_width=True
                 )
+                st.caption("💡 **Tip:** Use the **Case Dossier & ATR Inspector** below to download ATR/Complaint documents directly or preview them inside the app (bypasses browser network blocks).")
 
                 # ── EXPORT TOOLBAR (Non-overlapping, dedicated row) ──
                 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -2652,11 +2780,34 @@ else:
                         with st.expander("📎 Download Signed Office Attendance Sheets / Statements", expanded=True):
                             unique_docs = docs_available[["office_name", "supporting_doc_url"]].drop_duplicates()
                             st.write(f"Found **{len(unique_docs)}** office attendance statement file(s) for this month:")
-                            for _, doc_row in unique_docs.iterrows():
+                            for idx, doc_row in unique_docs.reset_index(drop=True).iterrows():
                                 o_name = doc_row["office_name"]
                                 d_url = doc_row["supporting_doc_url"]
+                                f_bytes, f_name, f_mime = fetch_storage_file_bytes(d_url, bucket_name="complaint-documents")
                                 s_url = get_secure_file_url(d_url)
-                                st.markdown(f"- 🏢 **{o_name}**: [📄 Open / Download Signed Sheet]({s_url})")
+                                
+                                doc_col1, doc_col2, doc_col3 = st.columns([3, 2, 2])
+                                with doc_col1:
+                                    st.markdown(f"🏢 **{o_name}**")
+                                with doc_col2:
+                                    if f_bytes:
+                                        st.download_button(
+                                            label="📥 Download Sheet",
+                                            data=f_bytes,
+                                            file_name=f"Attendance_{o_name.replace(' ', '_')}_{audit_month}_{audit_year}.pdf",
+                                            mime=f_mime,
+                                            key=f"att_stmt_dl_{idx}",
+                                            use_container_width=True
+                                        )
+                                    else:
+                                        st.markdown(f"[📄 Open Sheet]({s_url})")
+                                with doc_col3:
+                                    st.markdown(
+                                        f'<a href="{s_url}" target="_blank" style="text-decoration:none;">'
+                                        f'<button style="width:100%; padding:6px 10px; background:#f8fafc; color:#1e3a8a; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">'
+                                        f'🔗 Direct URL</button></a>',
+                                        unsafe_allow_html=True
+                                    )
             else:
                 st.warning("No attendance data available for the selected period.")
 
