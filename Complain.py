@@ -1275,7 +1275,7 @@ def render_file_action_button(file_url, btn_label="📄 View / Download", key_id
     NIC/BSWAN firewalls and ERR_QUIC_PROTOCOL_ERROR.
     Guarantees unique widget keys across all tabs.
     """
-    if not file_url or not str(file_url).strip():
+    if not file_url or not str(file_url).strip() or str(file_url).strip() == "None":
         st.caption("📎 No file attached.")
         return
 
@@ -1290,48 +1290,31 @@ def render_file_action_button(file_url, btn_label="📄 View / Download", key_id
     _ACTIVE_RUN_KEYS.add(final_k)
 
     file_bytes, file_name, mime_type = fetch_storage_file_bytes(val, bucket_name=bucket_name)
-    signed_url = get_secure_file_url(val, bucket_name=bucket_name)
     clean_label = btn_label.replace("📄", "").replace("View", "").strip() or "Document"
 
-    if file_bytes:
-        b_c1, b_c2 = st.columns([1, 1])
-        with b_c1:
-            st.download_button(
-                label=f"📥 Download {clean_label}",
-                data=file_bytes,
-                file_name=file_name,
-                mime=mime_type,
-                key=final_k,
-                use_container_width=True
-            )
-        with b_c2:
-            st.markdown(
-                f'<a href="{signed_url}" target="_blank" style="text-decoration: none;">'
-                f'<button style="width: 100%; background: #f8fafc; color: #1e3a8a; border: 1px solid #cbd5e1; '
-                f'padding: 7px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;">'
-                f'🔗 Direct URL</button></a>',
-                unsafe_allow_html=True
-            )
+    if file_bytes and len(file_bytes) > 0:
+        st.download_button(
+            label=f"📥 Download {clean_label} ({file_name})",
+            data=file_bytes,
+            file_name=file_name,
+            mime=mime_type,
+            key=final_k,
+            use_container_width=True
+        )
         
-        # In-app preview modal/expander (no external requests needed)
+        # In-app preview (served directly from memory, bypasses NIC/BSWAN browser firewall)
         if mime_type.startswith("image/"):
-            with st.expander(f"👁️ Preview {clean_label} (Image)", expanded=False):
+            with st.expander(f"👁️ View / Preview {clean_label} (Image)", expanded=True):
                 st.image(file_bytes, use_container_width=True)
         elif mime_type == "application/pdf":
-            with st.expander(f"👁️ Preview {clean_label} (PDF in App)", expanded=False):
+            with st.expander(f"👁️ View / Preview {clean_label} (PDF)", expanded=True):
                 b64_pdf = base64.b64encode(file_bytes).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="550" type="application/pdf"></iframe>'
+                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1" width="100%" height="550" type="application/pdf"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.info(f"📄 File `{file_name}` ready for download via button above.")
     else:
-        # Fallback to direct signed button link
-        st.markdown(
-            f'<a href="{signed_url}" target="_blank" style="text-decoration: none;">'
-            f'<button style="background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; padding: 8px 18px; '
-            f'border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 13px; '
-            f'box-shadow: 0 2px 6px rgba(30,58,138,0.25);">'
-            f'{btn_label}</button></a>',
-            unsafe_allow_html=True
-        )
+        st.caption(f"📎 Attached file reference: `{file_name or 'Document'}` (Not previewable)")
 
 def upload_file_to_supabase(uploaded_file, file_prefix="complaint"):
     """Uploads file to Supabase Storage with clean naming.
@@ -1893,10 +1876,10 @@ else:
                     display_df = filtered_df.copy()
                     if 'Uploaded File URL' in display_df.columns:
                         display_df['📎 Complaint'] = display_df['Uploaded File URL'].apply(
-                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+                            lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
                     if 'ATR Response File URL' in display_df.columns:
                         display_df['📎 ATR'] = display_df['ATR Response File URL'].apply(
-                            lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+                            lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
 
                     display_cols = ['Date', 'Complaint ID', 'Reference No', 'Category',
                                     'Normalized_Status', 'Description', 'District Action/Opinion',
@@ -1906,14 +1889,14 @@ else:
                     st.dataframe(
                         display_df[valid_cols].rename(columns={"Normalized_Status": "Status"}),
                         column_config={
-                            "📎 Complaint": st.column_config.LinkColumn("📎 Complaint", display_text="📄 View"),
-                            "📎 ATR": st.column_config.LinkColumn("📎 ATR", display_text="📄 View"),
+                            "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small"),
+                            "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small"),
                             "Description": st.column_config.TextColumn("Description", width="large"),
                             "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                         },
                         hide_index=True, use_container_width=True
                     )
-                    st.caption("💡 **Tip:** Use the **Case Dossier Inspector** below to download attachments or preview documents directly inside the application.")
+                    st.info("💡 **View / Download Attachments:** Select any Complaint ID in the **Case Dossier Inspector** below to view attached files or download them directly (safe for BSWAN / NIC networks).")
 
                     # Export toolbar for block
                     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -2154,11 +2137,11 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Prepare display columns
+                # Prepare display columns - status indicator instead of direct external links
                 filtered_global['📎 Complaint'] = filtered_global['Uploaded File URL'].apply(
-                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+                    lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
                 filtered_global['📎 ATR'] = filtered_global['ATR Response File URL'].apply(
-                    lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+                    lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
 
                 table_cols = ['Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category',
                               'Normalized_Status', 'Description', 'District Action/Opinion',
@@ -2168,14 +2151,14 @@ else:
                 st.dataframe(
                     filtered_global[valid_table_cols].rename(columns={"Normalized_Status": "Status"}),
                     column_config={
-                        "📎 Complaint": st.column_config.LinkColumn("📎 Complaint", display_text="📄 View"),
-                        "📎 ATR": st.column_config.LinkColumn("📎 ATR", display_text="📄 View"),
+                        "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small"),
+                        "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small"),
                         "Description": st.column_config.TextColumn("Description", width="large"),
                         "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                     },
                     hide_index=True, use_container_width=True
                 )
-                st.caption("💡 **Tip:** Use the **Case Dossier & ATR Inspector** below to download ATR/Complaint documents directly or preview them inside the app (bypasses browser network blocks).")
+                st.info("💡 **View / Download Attachments:** Select any Complaint ID in the **Case Dossier & ATR Inspector** below to view attached PDFs/images directly inline or download them via Streamlit (safe for BSWAN / NIC government networks).")
 
                 # ── EXPORT TOOLBAR (Non-overlapping, dedicated row) ──
                 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -2765,7 +2748,7 @@ else:
 
                 if "supporting_doc_url" in display_att_df.columns:
                     display_att_df["📎 Document"] = display_att_df["supporting_doc_url"].apply(
-                        lambda x: get_secure_file_url(x) if str(x).startswith("http") else "")
+                        lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
                     show_cols = ["office_name", "employee_name", "designation", "attendance_status",
                                  "total_working_days", "days_present", "days_absent", "remarks", "📎 Document"]
                 else:
@@ -2773,9 +2756,9 @@ else:
                                  "total_working_days", "days_present", "days_absent", "remarks"]
 
                 valid_show = [c for c in show_cols if c in display_att_df.columns]
-                col_config = {}
-                if "📎 Document" in valid_show:
-                    col_config["📎 Document"] = st.column_config.LinkColumn("📎 Document", display_text="📄 View Document")
+                col_config = {
+                    "📎 Document": st.column_config.TextColumn("📎 Document", width="small")
+                }
 
                 st.dataframe(
                     display_att_df[valid_show],
@@ -2784,41 +2767,48 @@ else:
                     hide_index=True
                 )
 
-                # Quick Direct Signed Document Download Links for Admin
-                if "supporting_doc_url" in display_att_df.columns:
-                    docs_available = display_att_df[display_att_df["supporting_doc_url"].str.strip() != ""]
+                # In-App Signed Office Attendance Sheets / Statements Viewer & Downloader
+                if "supporting_doc_url" in att_df.columns:
+                    docs_available = att_df[att_df["supporting_doc_url"].astype(str).str.strip().str.startswith("http")]
                     if not docs_available.empty:
-                        with st.expander("📎 Download Signed Office Attendance Sheets / Statements", expanded=True):
+                        with st.expander("📎 View & Download Signed Office Attendance Sheets / Statements", expanded=True):
                             unique_docs = docs_available[["office_name", "supporting_doc_url"]].drop_duplicates()
-                            st.write(f"Found **{len(unique_docs)}** office attendance statement file(s) for this month:")
-                            for idx, doc_row in unique_docs.reset_index(drop=True).iterrows():
-                                o_name = doc_row["office_name"]
-                                d_url = doc_row["supporting_doc_url"]
+                            st.write(f"Found **{len(unique_docs)}** office attendance statement file(s) for {calendar.month_name[audit_month]} {audit_year}:")
+                            
+                            office_list = unique_docs["office_name"].tolist()
+                            sel_preview_office = st.selectbox(
+                                "Select Office to Preview / Download Signed Attendance Sheet:",
+                                office_list,
+                                key="adm_preview_att_sheet_sel"
+                            )
+                            
+                            sel_doc_row = unique_docs[unique_docs["office_name"] == sel_preview_office].iloc[0]
+                            d_url = sel_doc_row["supporting_doc_url"]
+                            
+                            with st.spinner(f"Loading signed sheet for {sel_preview_office}..."):
                                 f_bytes, f_name, f_mime = fetch_storage_file_bytes(d_url, bucket_name="complaint-documents")
-                                s_url = get_secure_file_url(d_url)
+                            
+                            if f_bytes:
+                                ext = f_name.split('.')[-1] if '.' in f_name else 'pdf'
+                                dl_name = f"Attendance_{sel_preview_office.replace(' ', '_')}_{calendar.month_name[audit_month]}_{audit_year}.{ext}"
+                                st.download_button(
+                                    label=f"📥 Download Signed Attendance Sheet — {sel_preview_office}",
+                                    data=f_bytes,
+                                    file_name=dl_name,
+                                    mime=f_mime,
+                                    key=f"att_stmt_dl_{sel_preview_office.replace(' ', '_')}",
+                                    use_container_width=True
+                                )
                                 
-                                doc_col1, doc_col2, doc_col3 = st.columns([3, 2, 2])
-                                with doc_col1:
-                                    st.markdown(f"🏢 **{o_name}**")
-                                with doc_col2:
-                                    if f_bytes:
-                                        st.download_button(
-                                            label="📥 Download Sheet",
-                                            data=f_bytes,
-                                            file_name=f"Attendance_{o_name.replace(' ', '_')}_{audit_month}_{audit_year}.pdf",
-                                            mime=f_mime,
-                                            key=f"att_stmt_dl_{idx}",
-                                            use_container_width=True
-                                        )
-                                    else:
-                                        st.markdown(f"[📄 Open Sheet]({s_url})")
-                                with doc_col3:
-                                    st.markdown(
-                                        f'<a href="{s_url}" target="_blank" style="text-decoration:none;">'
-                                        f'<button style="width:100%; padding:6px 10px; background:#f8fafc; color:#1e3a8a; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">'
-                                        f'🔗 Direct URL</button></a>',
-                                        unsafe_allow_html=True
-                                    )
+                                # Inline preview directly in app (bypasses browser firewall / QUIC blocks)
+                                if f_mime.startswith("image/"):
+                                    st.image(f_bytes, caption=f"Signed Attendance Statement: {sel_preview_office}", use_container_width=True)
+                                elif f_mime == "application/pdf":
+                                    b64_pdf = base64.b64encode(f_bytes).decode('utf-8')
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1" width="100%" height="600" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+                            else:
+                                st.warning(f"⚠️ Document reference found for {sel_preview_office}, but could not be streamed from storage.")
             else:
                 st.warning("No attendance data available for the selected period.")
 
