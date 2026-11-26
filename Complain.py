@@ -1271,8 +1271,8 @@ def fetch_storage_file_bytes(file_url_or_path, bucket_name="complaint-documents"
 _ACTIVE_RUN_KEYS = set()
 
 def render_file_action_button(file_url, btn_label="📄 View / Download", key_id="1", bucket_name="complaint-documents"):
-    """Renders a direct in-app download button and viewer that bypasses
-    NIC/BSWAN firewalls and ERR_QUIC_PROTOCOL_ERROR.
+    """Renders a direct in-app download button that bypasses
+    NIC/BSWAN firewalls, Microsoft Edge iframe blocks, and ERR_QUIC_PROTOCOL_ERROR.
     Guarantees unique widget keys across all tabs.
     """
     if not file_url or not str(file_url).strip() or str(file_url).strip() == "None":
@@ -1290,29 +1290,23 @@ def render_file_action_button(file_url, btn_label="📄 View / Download", key_id
     _ACTIVE_RUN_KEYS.add(final_k)
 
     file_bytes, file_name, mime_type = fetch_storage_file_bytes(val, bucket_name=bucket_name)
-    clean_label = btn_label.replace("📄", "").replace("View", "").strip() or "Document"
+    clean_label = btn_label.replace("📄", "").replace("View", "").replace("Download", "").strip() or "Document"
 
     if file_bytes and len(file_bytes) > 0:
+        ext = file_name.split('.')[-1] if '.' in file_name else 'pdf'
         st.download_button(
             label=f"📥 Download {clean_label} ({file_name})",
             data=file_bytes,
             file_name=file_name,
-            mime=mime_type,
+            mime=mime_type or "application/octet-stream",
             key=final_k,
             use_container_width=True
         )
         
-        # In-app preview (served directly from memory, bypasses NIC/BSWAN browser firewall)
+        # In-app image preview (images are universally supported across Edge, Chrome, Safari without security blocks)
         if mime_type.startswith("image/"):
             with st.expander(f"👁️ View / Preview {clean_label} (Image)", expanded=True):
                 st.image(file_bytes, use_container_width=True)
-        elif mime_type == "application/pdf":
-            with st.expander(f"👁️ View / Preview {clean_label} (PDF)", expanded=True):
-                b64_pdf = base64.b64encode(file_bytes).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1" width="100%" height="550" type="application/pdf"></iframe>'
-                st.markdown(pdf_display, unsafe_allow_html=True)
-        else:
-            st.info(f"📄 File `{file_name}` ready for download via button above.")
     else:
         st.caption(f"📎 Attached file reference: `{file_name or 'Document'}` (Not previewable)")
 
@@ -1886,17 +1880,46 @@ else:
                                     'Resolution Date', '📎 Complaint', '📎 ATR']
                     valid_cols = [c for c in display_cols if c in display_df.columns]
 
-                    st.dataframe(
+                    blk_table_event = st.dataframe(
                         display_df[valid_cols].rename(columns={"Normalized_Status": "Status"}),
                         column_config={
-                            "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small"),
-                            "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small"),
+                            "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small", help="Click row to select & download"),
+                            "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small", help="Click row to select & download"),
                             "Description": st.column_config.TextColumn("Description", width="large"),
                             "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                         },
-                        hide_index=True, use_container_width=True
+                        hide_index=True, use_container_width=True,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        key="blk_table_df_select"
                     )
-                    st.info("💡 **View / Download Attachments:** Select any Complaint ID in the **Case Dossier Inspector** below to view attached files or download them directly (safe for BSWAN / NIC networks).")
+
+                    # Dynamic Row-Click Download Toolbar for Block
+                    blk_sel_rows = blk_table_event.selection.rows if hasattr(blk_table_event, "selection") and hasattr(blk_table_event.selection, "rows") else []
+                    if blk_sel_rows and len(blk_sel_rows) > 0:
+                        clicked_blk_row = display_df.iloc[blk_sel_rows[0]]
+                        clicked_blk_id = clicked_blk_row['Complaint ID']
+                        st.markdown(f"""
+                        <div style="background: #f0fdf4; border: 1.5px solid #22c55e; border-radius: 8px; padding: 10px 14px; margin: 8px 0;">
+                            <strong style="color: #15803d; font-size: 14px;">📌 Selected Case: <code>{clicked_blk_id}</code></strong>
+                            <span style="color: #475569; font-size: 13px; margin-left: 10px;">({clicked_blk_row.get('Category', '')} — {clicked_blk_row.get('Date', '')})</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        b_dl1, b_dl2 = st.columns(2)
+                        with b_dl1:
+                            raw_c = str(clicked_blk_row.get('Uploaded File URL', ''))
+                            if raw_c.startswith("http"):
+                                render_file_action_button(raw_c, btn_label="📥 Download Complaint Attachment", key_id=f"blk_click_cpl_{clicked_blk_id}")
+                            else:
+                                st.caption("📎 No complaint attachment uploaded.")
+                        with b_dl2:
+                            raw_atr = str(clicked_blk_row.get('ATR Response File URL', ''))
+                            if raw_atr.startswith("http"):
+                                render_file_action_button(raw_atr, btn_label="📥 Download ATR Document", key_id=f"blk_click_atr_{clicked_blk_id}")
+                            else:
+                                st.caption("⚖ No ATR attachment uploaded yet.")
+                    else:
+                        st.info("💡 **Click any row in the table above** to instantly reveal its 1-click Download buttons, or inspect below.")
 
                     # Export toolbar for block
                     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -1914,7 +1937,13 @@ else:
 
                     st.markdown("---")
                     st.markdown("### 🔍 Case Dossier Inspector")
-                    selected_cpl = st.selectbox("Select Complaint ID:", filtered_df['Complaint ID'].unique(), key="block_dossier_select")
+                    blk_unique_ids = list(filtered_df['Complaint ID'].unique())
+                    default_blk_idx = 0
+                    if blk_sel_rows and len(blk_sel_rows) > 0:
+                        clicked_blk_id = display_df.iloc[blk_sel_rows[0]]['Complaint ID']
+                        if clicked_blk_id in blk_unique_ids:
+                            default_blk_idx = blk_unique_ids.index(clicked_blk_id)
+                    selected_cpl = st.selectbox("Select Complaint ID:", blk_unique_ids, index=default_blk_idx, key="block_dossier_select")
                     selected_row = filtered_df[filtered_df['Complaint ID'] == selected_cpl].iloc[0]
                     render_dossier_card(selected_row, key_prefix="blk_dossier")
             else:
@@ -2148,17 +2177,46 @@ else:
                               'Resolution Date', '📎 Complaint', '📎 ATR']
                 valid_table_cols = [c for c in table_cols if c in filtered_global.columns]
 
-                st.dataframe(
+                adm_table_event = st.dataframe(
                     filtered_global[valid_table_cols].rename(columns={"Normalized_Status": "Status"}),
                     column_config={
-                        "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small"),
-                        "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small"),
+                        "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small", help="Click row to select & download"),
+                        "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small", help="Click row to select & download"),
                         "Description": st.column_config.TextColumn("Description", width="large"),
                         "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                     },
-                    hide_index=True, use_container_width=True
+                    hide_index=True, use_container_width=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key="adm_tab1_df_select"
                 )
-                st.info("💡 **View / Download Attachments:** Select any Complaint ID in the **Case Dossier & ATR Inspector** below to view attached PDFs/images directly inline or download them via Streamlit (safe for BSWAN / NIC government networks).")
+
+                # Dynamic Row-Click Download Toolbar for Admin Grievances
+                adm_sel_rows = adm_table_event.selection.rows if hasattr(adm_table_event, "selection") and hasattr(adm_table_event.selection, "rows") else []
+                if adm_sel_rows and len(adm_sel_rows) > 0:
+                    clicked_adm_row = filtered_global.iloc[adm_sel_rows[0]]
+                    clicked_adm_id = clicked_adm_row['Complaint ID']
+                    st.markdown(f"""
+                    <div style="background: #f0fdf4; border: 1.5px solid #22c55e; border-radius: 8px; padding: 10px 14px; margin: 8px 0;">
+                        <strong style="color: #15803d; font-size: 14px;">📌 Selected Case from Table: <code>{clicked_adm_id}</code></strong>
+                        <span style="color: #475569; font-size: 13px; margin-left: 10px;">Office: {clicked_adm_row.get('Jurisdiction', 'N/A')} | Sector: {clicked_adm_row.get('Category', '')}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    a_dl1, a_dl2 = st.columns(2)
+                    with a_dl1:
+                        c_file = str(clicked_adm_row.get('Uploaded File URL', ''))
+                        if c_file.startswith("http"):
+                            render_file_action_button(c_file, btn_label="📥 Download Complaint Attachment", key_id=f"adm_click_cpl_{clicked_adm_id}")
+                        else:
+                            st.caption("📎 No complaint attachment uploaded.")
+                    with a_dl2:
+                        atr_file = str(clicked_adm_row.get('ATR Response File URL', ''))
+                        if atr_file.startswith("http"):
+                            render_file_action_button(atr_file, btn_label="📥 Download ATR Document", key_id=f"adm_click_atr_{clicked_adm_id}")
+                        else:
+                            st.caption("⚖ No ATR attachment uploaded yet.")
+                else:
+                    st.info("💡 **Click any row in the table above** to instantly reveal its 1-click Download buttons, or inspect below.")
 
                 # ── EXPORT TOOLBAR (Non-overlapping, dedicated row) ──
                 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -2180,7 +2238,13 @@ else:
                 st.markdown("---")
                 st.markdown("### 🖨️ Case Dossier & ATR Inspector")
                 if not filtered_global.empty:
-                    chosen_id = st.selectbox("Select Complaint ID:", filtered_global['Complaint ID'].unique(), key="admin_dossier_select")
+                    adm_unique_ids = list(filtered_global['Complaint ID'].unique())
+                    default_adm_idx = 0
+                    if adm_sel_rows and len(adm_sel_rows) > 0:
+                        clicked_adm_id = filtered_global.iloc[adm_sel_rows[0]]['Complaint ID']
+                        if clicked_adm_id in adm_unique_ids:
+                            default_adm_idx = adm_unique_ids.index(clicked_adm_id)
+                    chosen_id = st.selectbox("Select Complaint ID:", adm_unique_ids, index=default_adm_idx, key="admin_dossier_select")
                     chosen_row = filtered_global[filtered_global['Complaint ID'] == chosen_id].iloc[0]
                     render_dossier_card(chosen_row, is_district=True, key_prefix="adm_tab1_dossier")
             else:
@@ -2760,55 +2824,75 @@ else:
                     "📎 Document": st.column_config.TextColumn("📎 Document", width="small")
                 }
 
-                st.dataframe(
+                att_table_event = st.dataframe(
                     display_att_df[valid_show],
                     column_config=col_config,
                     use_container_width=True,
-                    hide_index=True
+                    hide_index=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key="adm_att_ledger_select"
                 )
 
-                # In-App Signed Office Attendance Sheets / Statements Viewer & Downloader
+                # Quick Download for Clicked Row in Ledger
+                att_sel_rows = att_table_event.selection.rows if hasattr(att_table_event, "selection") and hasattr(att_table_event.selection, "rows") else []
+                if att_sel_rows and len(att_sel_rows) > 0:
+                    clicked_att_row = display_att_df.iloc[att_sel_rows[0]]
+                    clicked_att_office = clicked_att_row.get("office_name", "")
+                    clicked_att_doc = str(clicked_att_row.get("supporting_doc_url", ""))
+                    if clicked_att_doc.startswith("http"):
+                        st.markdown(f"""
+                        <div style="background: #f0fdf4; border: 1.5px solid #22c55e; border-radius: 8px; padding: 10px 14px; margin: 8px 0;">
+                            <strong style="color: #15803d; font-size: 14px;">📌 Selected Office from Table: <code>{clicked_att_office}</code></strong>
+                            <span style="color: #475569; font-size: 13px; margin-left: 10px;">(Staff: {clicked_att_row.get('employee_name', '')})</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        f_bytes, f_name, f_mime = fetch_storage_file_bytes(clicked_att_doc, bucket_name="complaint-documents")
+                        if f_bytes:
+                            ext = f_name.split('.')[-1] if '.' in f_name else 'pdf'
+                            dl_filename = f"Attendance_{clicked_att_office.replace(' ', '_')}_{calendar.month_name[audit_month]}_{audit_year}.{ext}"
+                            st.download_button(
+                                label=f"📥 Download Signed Attendance Sheet — {clicked_att_office}",
+                                data=f_bytes,
+                                file_name=dl_filename,
+                                mime=f_mime or "application/pdf",
+                                key=f"att_click_dl_{clicked_att_office.replace(' ', '_')}",
+                                use_container_width=True
+                            )
+                        else:
+                            st.warning(f"⚠️ Document attached for {clicked_att_office}, but could not be streamed from storage.")
+                    else:
+                        st.info(f"ℹ️ No signed attendance sheet uploaded for {clicked_att_office} in this record.")
+
+                # ── SIGNED OFFICE ATTENDANCE SHEETS (DIRECT MULTI-OFFICE LIST BELOW LEDGER) ──
                 if "supporting_doc_url" in att_df.columns:
                     docs_available = att_df[att_df["supporting_doc_url"].astype(str).str.strip().str.startswith("http")]
                     if not docs_available.empty:
-                        with st.expander("📎 View & Download Signed Office Attendance Sheets / Statements", expanded=True):
+                        with st.expander("📎 Download Signed Office Attendance Sheets / Statements", expanded=True):
                             unique_docs = docs_available[["office_name", "supporting_doc_url"]].drop_duplicates()
-                            st.write(f"Found **{len(unique_docs)}** office attendance statement file(s) for {calendar.month_name[audit_month]} {audit_year}:")
+                            st.markdown(f"**Found {len(unique_docs)} signed office attendance statement file(s) for {calendar.month_name[audit_month]} {audit_year}:**")
                             
-                            office_list = unique_docs["office_name"].tolist()
-                            sel_preview_office = st.selectbox(
-                                "Select Office to Preview / Download Signed Attendance Sheet:",
-                                office_list,
-                                key="adm_preview_att_sheet_sel"
-                            )
-                            
-                            sel_doc_row = unique_docs[unique_docs["office_name"] == sel_preview_office].iloc[0]
-                            d_url = sel_doc_row["supporting_doc_url"]
-                            
-                            with st.spinner(f"Loading signed sheet for {sel_preview_office}..."):
+                            for idx, doc_row in unique_docs.reset_index(drop=True).iterrows():
+                                o_name = doc_row["office_name"]
+                                d_url = doc_row["supporting_doc_url"]
                                 f_bytes, f_name, f_mime = fetch_storage_file_bytes(d_url, bucket_name="complaint-documents")
-                            
-                            if f_bytes:
-                                ext = f_name.split('.')[-1] if '.' in f_name else 'pdf'
-                                dl_name = f"Attendance_{sel_preview_office.replace(' ', '_')}_{calendar.month_name[audit_month]}_{audit_year}.{ext}"
-                                st.download_button(
-                                    label=f"📥 Download Signed Attendance Sheet — {sel_preview_office}",
-                                    data=f_bytes,
-                                    file_name=dl_name,
-                                    mime=f_mime,
-                                    key=f"att_stmt_dl_{sel_preview_office.replace(' ', '_')}",
-                                    use_container_width=True
-                                )
                                 
-                                # Inline preview directly in app (bypasses browser firewall / QUIC blocks)
-                                if f_mime.startswith("image/"):
-                                    st.image(f_bytes, caption=f"Signed Attendance Statement: {sel_preview_office}", use_container_width=True)
-                                elif f_mime == "application/pdf":
-                                    b64_pdf = base64.b64encode(f_bytes).decode('utf-8')
-                                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1" width="100%" height="600" type="application/pdf"></iframe>'
-                                    st.markdown(pdf_display, unsafe_allow_html=True)
-                            else:
-                                st.warning(f"⚠️ Document reference found for {sel_preview_office}, but could not be streamed from storage.")
+                                doc_col1, doc_col2 = st.columns([3, 2])
+                                with doc_col1:
+                                    st.markdown(f"🏢 **{o_name}**")
+                                with doc_col2:
+                                    if f_bytes:
+                                        ext = f_name.split('.')[-1] if '.' in f_name else 'pdf'
+                                        st.download_button(
+                                            label=f"📥 Download Sheet — {o_name}",
+                                            data=f_bytes,
+                                            file_name=f"Attendance_{o_name.replace(' ', '_')}_{calendar.month_name[audit_month]}_{audit_year}.{ext}",
+                                            mime=f_mime or "application/pdf",
+                                            key=f"att_stmt_dl_{idx}_{o_name.replace(' ', '_')}",
+                                            use_container_width=True
+                                        )
+                                    else:
+                                        st.caption("⚠️ File pending or unavailable")
             else:
                 st.warning("No attendance data available for the selected period.")
 
