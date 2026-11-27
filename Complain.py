@@ -1868,78 +1868,12 @@ else:
                         st.markdown(f'<div class="metric-card disposed"><span class="metric-icon">🟢</span><div class="metric-title">Disposed</div><div class="metric-value" style="color:#10b981;">{disp_b}</div></div>', unsafe_allow_html=True)
 
                     display_df = filtered_df.copy()
-
-                    # ── 📎 DIRECT CASE ATTACHMENT & ATR DOWNLOAD HUB FOR BLOCK ──
-                    blk_cases_with_files = display_df[
-                        (display_df['Uploaded File URL'].astype(str).str.startswith("http")) |
-                        (display_df['ATR Response File URL'].astype(str).str.startswith("http"))
-                    ]
-
-                    with st.expander("📎 Download Case Attachments (Complaint & ATR Documents)", expanded=True):
-                        if not blk_cases_with_files.empty:
-                            def format_blk_case_label(cid):
-                                r = display_df[display_df['Complaint ID'] == cid].iloc[0]
-                                has_c = "📄 Complaint" if str(r.get('Uploaded File URL', '')).startswith("http") else ""
-                                has_a = "⚖ ATR" if str(r.get('ATR Response File URL', '')).startswith("http") else ""
-                                att_tag = " + ".join(filter(None, [has_c, has_a]))
-                                return f"{cid} — [{r.get('Category', '')}] ({att_tag})"
-
-                            blk_cids_with_files = list(blk_cases_with_files['Complaint ID'].unique())
-                            all_blk_cids = list(display_df['Complaint ID'].unique())
-                            sorted_blk_cids = blk_cids_with_files + [c for c in all_blk_cids if c not in blk_cids_with_files]
-
-                            sel_blk_hub_cid = st.selectbox(
-                                "Select Case to Download Attached Document(s):",
-                                sorted_blk_cids,
-                                format_func=format_blk_case_label,
-                                key="hub_blk_case_select"
-                            )
-
-                            sel_blk_data = display_df[display_df['Complaint ID'] == sel_blk_hub_cid].iloc[0]
-                            b_hub_c1, b_hub_c2 = st.columns(2)
-                            with b_hub_c1:
-                                raw_c = str(sel_blk_data.get('Uploaded File URL', ''))
-                                if raw_c.startswith("http"):
-                                    render_file_action_button(raw_c, btn_label="📥 Download Complaint Attachment", key_id=f"blk_hub_cpl_{sel_blk_hub_cid}")
-                                else:
-                                    st.caption("📎 No complaint attachment uploaded for this case.")
-                            with b_hub_c2:
-                                raw_atr = str(sel_blk_data.get('ATR Response File URL', ''))
-                                if raw_atr.startswith("http"):
-                                    render_file_action_button(raw_atr, btn_label="📥 Download Official ATR Document", key_id=f"blk_hub_atr_{sel_blk_hub_cid}")
-                                else:
-                                    st.caption("⚖ No ATR attachment uploaded for this case.")
-
-                            # All cases list with direct 1-click download buttons (identical to Attendance statements)
-                            st.markdown(f"**Found {len(blk_cases_with_files)} case(s) with uploaded attachment(s):**")
-                            for idx, cf_row in blk_cases_with_files.reset_index(drop=True).iterrows():
-                                c_id = cf_row['Complaint ID']
-                                c_cat = cf_row.get('Category', 'N/A')
-                                
-                                c_info, c_btn1, c_btn2 = st.columns([3, 2, 2])
-                                with c_info:
-                                    st.markdown(f"🔖 **{c_id}** ({c_cat})")
-                                with c_btn1:
-                                    raw_c_item = str(cf_row.get('Uploaded File URL', ''))
-                                    if raw_c_item.startswith("http"):
-                                        render_file_action_button(raw_c_item, btn_label="📥 Complaint File", key_id=f"blk_all_cpl_{c_id}_{idx}")
-                                    else:
-                                        st.caption("—")
-                                with c_btn2:
-                                    raw_atr_item = str(cf_row.get('ATR Response File URL', ''))
-                                    if raw_atr_item.startswith("http"):
-                                        render_file_action_button(raw_atr_item, btn_label="📥 ATR File", key_id=f"blk_all_atr_{c_id}_{idx}")
-                                    else:
-                                        st.caption("—")
-                        else:
-                            st.info("ℹ️ No complaint or ATR files uploaded for your office's current filter.")
-
                     if 'Uploaded File URL' in display_df.columns:
                         display_df['📎 Complaint'] = display_df['Uploaded File URL'].apply(
-                            lambda x: "✅ Available" if str(x).strip().startswith("http") else "—")
+                            lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
                     if 'ATR Response File URL' in display_df.columns:
                         display_df['📎 ATR'] = display_df['ATR Response File URL'].apply(
-                            lambda x: "✅ Available" if str(x).strip().startswith("http") else "—")
+                            lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
 
                     display_cols = ['Date', 'Complaint ID', 'Reference No', 'Category',
                                     'Normalized_Status', 'Description', 'District Action/Opinion',
@@ -1949,14 +1883,14 @@ else:
                     st.dataframe(
                         display_df[valid_cols].rename(columns={"Normalized_Status": "Status"}),
                         column_config={
-                            "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small", help="Download from the Case Attachments panel above"),
-                            "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small", help="Download from the Case Attachments panel above"),
+                            "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small"),
+                            "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small"),
                             "Description": st.column_config.TextColumn("Description", width="large"),
                             "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                         },
                         hide_index=True, use_container_width=True
                     )
-                    st.caption("💡 **Tip:** Use the **'Download Case Attachments'** panel above to download Complaint or ATR files directly with 1 click.")
+                    st.caption("💡 **Tip:** Use the **Case Dossier Inspector** below to view details and download attachments.")
 
                     # Export toolbar for block
                     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -2198,77 +2132,11 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # ── 📎 DIRECT CASE ATTACHMENT & ATR DOWNLOAD HUB (BSWAN / ALL NETWORKS) ──
-                cases_with_files = filtered_global[
-                    (filtered_global['Uploaded File URL'].astype(str).str.startswith("http")) |
-                    (filtered_global['ATR Response File URL'].astype(str).str.startswith("http"))
-                ]
-
-                with st.expander("📎 Download Case Attachments (Complaint & ATR Documents)", expanded=True):
-                    if not cases_with_files.empty:
-                        def format_case_label(cid):
-                            r = filtered_global[filtered_global['Complaint ID'] == cid].iloc[0]
-                            has_c = "📄 Complaint" if str(r.get('Uploaded File URL', '')).startswith("http") else ""
-                            has_a = "⚖ ATR" if str(r.get('ATR Response File URL', '')).startswith("http") else ""
-                            att_tag = " + ".join(filter(None, [has_c, has_a]))
-                            return f"{cid} — {r.get('Jurisdiction', 'N/A')} [{r.get('Category', '')}] ({att_tag})"
-
-                        cids_with_files = list(cases_with_files['Complaint ID'].unique())
-                        all_cids = list(filtered_global['Complaint ID'].unique())
-                        sorted_cids = cids_with_files + [c for c in all_cids if c not in cids_with_files]
-
-                        sel_hub_cid = st.selectbox(
-                            "Select Case to Download Attached Document(s):",
-                            sorted_cids,
-                            format_func=format_case_label,
-                            key="hub_adm_case_select"
-                        )
-
-                        sel_case_data = filtered_global[filtered_global['Complaint ID'] == sel_hub_cid].iloc[0]
-                        hub_c1, hub_c2 = st.columns(2)
-                        with hub_c1:
-                            raw_c = str(sel_case_data.get('Uploaded File URL', ''))
-                            if raw_c.startswith("http"):
-                                render_file_action_button(raw_c, btn_label="📥 Download Complaint Attachment", key_id=f"hub_cpl_{sel_hub_cid}")
-                            else:
-                                st.caption("📎 No complaint attachment uploaded for this case.")
-                        with hub_c2:
-                            raw_atr = str(sel_case_data.get('ATR Response File URL', ''))
-                            if raw_atr.startswith("http"):
-                                render_file_action_button(raw_atr, btn_label="📥 Download Official ATR Document", key_id=f"hub_atr_{sel_hub_cid}")
-                            else:
-                                st.caption("⚖ No ATR attachment uploaded for this case.")
-
-                        # All cases list with direct 1-click download buttons (identical to Attendance statements)
-                        st.markdown(f"**Found {len(cases_with_files)} case(s) with uploaded attachment(s):**")
-                        for idx, cf_row in cases_with_files.reset_index(drop=True).iterrows():
-                            c_id = cf_row['Complaint ID']
-                            c_jur = cf_row.get('Jurisdiction', 'N/A')
-                            c_cat = cf_row.get('Category', 'N/A')
-                            
-                            c_info, c_btn1, c_btn2 = st.columns([3, 2, 2])
-                            with c_info:
-                                st.markdown(f"🔖 **{c_id}** ({c_jur} — {c_cat})")
-                            with c_btn1:
-                                raw_c_item = str(cf_row.get('Uploaded File URL', ''))
-                                if raw_c_item.startswith("http"):
-                                    render_file_action_button(raw_c_item, btn_label="📥 Complaint File", key_id=f"all_cpl_{c_id}_{idx}")
-                                else:
-                                    st.caption("—")
-                            with c_btn2:
-                                raw_atr_item = str(cf_row.get('ATR Response File URL', ''))
-                                if raw_atr_item.startswith("http"):
-                                    render_file_action_button(raw_atr_item, btn_label="📥 ATR File", key_id=f"all_atr_{c_id}_{idx}")
-                                else:
-                                    st.caption("—")
-                    else:
-                        st.info("ℹ️ No complaint or ATR files uploaded for the cases in the current filter.")
-
-                # Prepare display columns - status indicator instead of direct external links
+                # Prepare display columns
                 filtered_global['📎 Complaint'] = filtered_global['Uploaded File URL'].apply(
-                    lambda x: "✅ Available" if str(x).strip().startswith("http") else "—")
+                    lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
                 filtered_global['📎 ATR'] = filtered_global['ATR Response File URL'].apply(
-                    lambda x: "✅ Available" if str(x).strip().startswith("http") else "—")
+                    lambda x: "📄 Attached" if str(x).strip().startswith("http") else "—")
 
                 table_cols = ['Date', 'Jurisdiction', 'Complaint ID', 'Reference No', 'Category',
                               'Normalized_Status', 'Description', 'District Action/Opinion',
@@ -2278,14 +2146,14 @@ else:
                 st.dataframe(
                     filtered_global[valid_table_cols].rename(columns={"Normalized_Status": "Status"}),
                     column_config={
-                        "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small", help="Download from the Case Attachments panel above"),
-                        "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small", help="Download from the Case Attachments panel above"),
+                        "📎 Complaint": st.column_config.TextColumn("📎 Complaint", width="small"),
+                        "📎 ATR": st.column_config.TextColumn("📎 ATR", width="small"),
                         "Description": st.column_config.TextColumn("Description", width="large"),
                         "District Action/Opinion": st.column_config.TextColumn("ATR", width="large")
                     },
                     hide_index=True, use_container_width=True
                 )
-                st.caption("💡 **Tip:** Use the **'Download Case Attachments'** panel above to download Complaint or ATR files directly with 1 click.")
+                st.caption("💡 **Tip:** Use the **Case Dossier & ATR Inspector** below to view full details and download Complaint/ATR attachments directly inside the portal.")
 
                 # ── EXPORT TOOLBAR (Non-overlapping, dedicated row) ──
                 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
