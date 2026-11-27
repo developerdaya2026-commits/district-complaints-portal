@@ -1290,12 +1290,12 @@ def render_file_action_button(file_url, btn_label="📄 View / Download", key_id
     _ACTIVE_RUN_KEYS.add(final_k)
 
     file_bytes, file_name, mime_type = fetch_storage_file_bytes(val, bucket_name=bucket_name)
-    clean_label = btn_label.replace("📄", "").replace("View", "").replace("Download", "").strip() or "Document"
+    clean_label = btn_label.replace("📥", "").replace("📄", "").replace("View", "").replace("Download", "").strip() or "Document"
 
     if file_bytes and len(file_bytes) > 0:
         ext = file_name.split('.')[-1] if '.' in file_name else 'pdf'
         st.download_button(
-            label=f"📥 Download {clean_label} ({file_name})",
+            label=f"📥 Download {clean_label}",
             data=file_bytes,
             file_name=file_name,
             mime=mime_type or "application/octet-stream",
@@ -1975,12 +1975,7 @@ else:
                     st.markdown("---")
                     st.markdown("### 🔍 Case Dossier Inspector")
                     blk_unique_ids = list(filtered_df['Complaint ID'].unique())
-                    default_blk_idx = 0
-                    if blk_sel_rows and len(blk_sel_rows) > 0:
-                        clicked_blk_id = display_df.iloc[blk_sel_rows[0]]['Complaint ID']
-                        if clicked_blk_id in blk_unique_ids:
-                            default_blk_idx = blk_unique_ids.index(clicked_blk_id)
-                    selected_cpl = st.selectbox("Select Complaint ID:", blk_unique_ids, index=default_blk_idx, key="block_dossier_select")
+                    selected_cpl = st.selectbox("Select Complaint ID:", blk_unique_ids, index=0, key="block_dossier_select")
                     selected_row = filtered_df[filtered_df['Complaint ID'] == selected_cpl].iloc[0]
                     render_dossier_card(selected_row, key_prefix="blk_dossier")
             else:
@@ -2313,12 +2308,7 @@ else:
                 st.markdown("### 🖨️ Case Dossier & ATR Inspector")
                 if not filtered_global.empty:
                     adm_unique_ids = list(filtered_global['Complaint ID'].unique())
-                    default_adm_idx = 0
-                    if adm_sel_rows and len(adm_sel_rows) > 0:
-                        clicked_adm_id = filtered_global.iloc[adm_sel_rows[0]]['Complaint ID']
-                        if clicked_adm_id in adm_unique_ids:
-                            default_adm_idx = adm_unique_ids.index(clicked_adm_id)
-                    chosen_id = st.selectbox("Select Complaint ID:", adm_unique_ids, index=default_adm_idx, key="admin_dossier_select")
+                    chosen_id = st.selectbox("Select Complaint ID:", adm_unique_ids, index=0, key="admin_dossier_select")
                     chosen_row = filtered_global[filtered_global['Complaint ID'] == chosen_id].iloc[0]
                     render_dossier_card(chosen_row, is_district=True, key_prefix="adm_tab1_dossier")
             else:
